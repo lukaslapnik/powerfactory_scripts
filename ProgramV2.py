@@ -2,8 +2,10 @@
 """
 Created on Sat May 28 08:49:17 2022
 
-@author: SSIMON
+@author: lukc
 """
+# New script with optimisations
+
 import pandas as pd
 import datetime
 import sys
