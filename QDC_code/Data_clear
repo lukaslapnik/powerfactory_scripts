@@ -1,0 +1,74 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat May 28 08:49:17 2022
+
+@author: SSIMON
+"""
+
+import pandas as pd
+import datetime
+import sys
+#import numpy
+import os
+import time
+from tkinter import Tk
+from tkinter import filedialog
+
+############### PARAMETRI ##################################################################################
+#Ali laufamo v engine mode (spyder) ali se izvaja v PowerFactory
+engine_mode = False
+# ČE JE TRUE ŠE ROČNO DEFINIRAJ TOČNO IME PROJEKTA
+define_project_name = "ENTSO-E_NT2030_RNPS_2023-2032_v18(4)"
+
+grids_modify_values = ['SI00','ITN1','HU00','HR00','ELES Interconnectios']
+
+grids_to_write_results = ['SI00', 'ELES Interconnectios']
+##########################################################################################################
+
+if engine_mode:
+    print("Running in engine mode")
+    sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2022 SP1\Python\3.9")
+
+import powerfactory as pf    
+app = pf.GetApplication()
+app.ClearOutputWindow()
+ldf = app.GetFromStudyCase("ComLdf")
+
+if engine_mode:
+    #Če je engine mode funkcije menjamo za navadn print
+    app.PrintPlain = print
+    app.PrintInfo = print
+    app.PrintWarn = print
+    app.PrintError = print
+    
+    #Ime projekta
+    app.ActivateProject(define_project_name)
+    prj = app.GetActiveProject()
+    activestudycase = app.GetActiveStudyCase()
+    scenario = app.GetActiveScenario()
+    
+###################################Izpis start cajta skripte##############################################
+start_time = datetime.datetime.now().time().strftime('%H:%M:%S')
+app.PrintPlain("Pričetek izvajanja programa ob " + str(start_time) + ".")
+# else: print("Pričetek izvajanja programa ob " + str(start_time) + ".")
+##########################################################################################################
+
+app.PrintPlain("Removing all chars for generators")
+for generator in app.GetCalcRelevantObjects("*.ElmSym"):
+    for chaOld in generator.GetContents("pgini*.ChaVec"): 
+        chaOld.Delete() 
+    for chaOld in generator.GetContents("qgini*.ChaVec"): 
+        chaOld.Delete() 
+        
+app.PrintPlain("Removing all chars for loads")
+for load in app.GetCalcRelevantObjects("*.ElmLod"):
+    for chaOld in load.GetContents("plini*.ChaVec"): 
+        chaOld.Delete() 
+    for chaOld in load.GetContents("qlini*.ChaVec"): 
+        chaOld.Delete() 
+
+end_time = datetime.datetime.now().time().strftime('%H:%M:%S')
+total_time=(datetime.datetime.strptime(end_time,'%H:%M:%S') - datetime.datetime.strptime(start_time,'%H:%M:%S'))
+now = datetime.datetime.now()
+current_time = now.strftime("%H:%M:%S")
+app.PrintPlain("Konec izvajanja programa ob " + str(current_time) + ". Potreben čas: " + str(total_time) + '.')
