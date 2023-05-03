@@ -2,7 +2,7 @@
 """
 Created on Wed Apr 26 13:29:56 2023
 
-@author: SSIMON
+@author: Lukc
 """
 import pandas as pd
 import datetime
