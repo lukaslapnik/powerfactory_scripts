@@ -2,7 +2,7 @@
 """
 Created on Wed Apr 26 13:29:56 2023
 
-@author: Lukc
+@author: SSIMON
 """
 import pandas as pd
 import datetime
@@ -21,7 +21,7 @@ import xlsxwriter
 
 ##################### PARAMETRI ######################
 
-year = int(2030)
+year = 2030
     
 #####################################################
 
@@ -50,16 +50,16 @@ def dobiDatumIzUreVLetu(leto, uravletu):
     # Initialise a DataFrame data structure.
     df = pd.DataFrame({'dates': result})
     # Add each column by extracting the object of interest from the datetime.
-    df['8760'] = df.index+1
+    df['8760'] = df.index + 1
     df['month'] = df['dates'].dt.month
     df['day'] = df['dates'].dt.day
     df['hour'] = df['dates'].dt.hour
     # Remove the datetime object column.
     df.drop(['dates'], inplace=True, axis=1)
     #df['8760'][ura-1]
-    mesec = df['month'][uravletu-1]
-    dan = df['day'][uravletu-1]
-    ura = df['hour'][uravletu-1]
+    mesec = df['month'][uravletu - 1]
+    dan = df['day'][uravletu - 1]
+    ura = df['hour'][uravletu - 1]
     #df['month'][ura-1]
     return mesec,dan,ura
 
@@ -492,11 +492,11 @@ worksheet5.write(0, 2, 'Powerfactory ime', format_header1)
 #Zapisovanje naslovov stolpcev
 #Ostopanje do 2% je z zeleno, odstopanje do 4% z rumeno, nad 4% z rdečo.
 [ worksheet5.write(0, i + 3, 'St. ur nad ' + str(round(float(1 + i * 0.01),2)) + ' p.u.', format_header2) for i in range(0,14) ]
-worksheet5.write(0, 17, 'Tip elementa', format_header4)
-worksheet5.write(0, 18, 'Un', format_header4)
-worksheet5.write(0, 19, 'Grid', format_header4)
-worksheet5.write(0, 20, 'Area', format_header4)
-worksheet5.write(0, 21, 'Zone', format_header4)
+worksheet5.write(0, 15, 'Tip elementa', format_header4)
+worksheet5.write(0, 16, 'Un', format_header4)
+worksheet5.write(0, 17, 'Grid', format_header4)
+worksheet5.write(0, 18, 'Area', format_header4)
+worksheet5.write(0, 19, 'Zone', format_header4)
 
 #Zapis sheeta 5
 
@@ -539,8 +539,8 @@ worksheet7.write(0, 20, 'Area', format_header4)
 worksheet7.write(0, 21, 'Zone', format_header4)
 
 # Sheet 7 podatkih generatorjev po urah
-
-worksheet8 = workbook.add_worksheet('Gen P/Q')
+    
+worksheet8 = workbook.add_worksheet('Gen PQ')
 
 worksheet8.set_row(0, 34)
 worksheet8_column_width = [20,20,20]
@@ -549,17 +549,19 @@ worksheet8.merge_range(0, 0, 1, 0, 'Pravo ime', format_header1)
 worksheet8.merge_range(0, 1, 1, 1, 'Advanced ime', format_header1)
 worksheet8.merge_range(0, 2, 1, 2, 'Powerfactory ime', format_header1)
 
+j=1
 for i in hours:
     # Hocemo v formatu Ura 1, Torek, 1.1.2030
     month, day, hour = dobiDatumIzUreVLetu(year, i)
     dayofweek = dobiDanVtednu(year, month, day)
-    worksheet8.merge_range(0, 3+2*i, 0, 4+2*i, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
+    worksheet8.merge_range(0, 2+2*j, 0, 3+2*j, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
     #worksheet8.write(0,3+2*i, 'Ura ' + str(hours[i]) + ', ' + str(dayofweek) + str(day) + '.' + str(month) + '.' + str(year), format_header1)
-    worksheet8.write(1, 3+2*i, 'P [MW]', format_header1)
-    worksheet8.write(1, 4+2*i, 'Q [Mvar]', format_header1)
+    worksheet8.write(1, 2+2*j, 'P [MW]', format_header1)
+    worksheet8.write(1, 3+2*j, 'Q [Mvar]', format_header1)
+    j+=1
 
 #Zapis sheeta 10 - nastavljene P in Q generatorjev v določenih gridih
-worksheet9 = workbook.add_worksheet('Load P/Q')
+worksheet9 = workbook.add_worksheet('Load PQ')
 
 worksheet9.set_row(0, 34)
 worksheet9_column_width = [20,20,20]
@@ -568,14 +570,16 @@ worksheet9.merge_range(0, 0, 1, 0, 'Pravo ime', format_header1)
 worksheet9.merge_range(0, 1, 1, 1, 'Advanced ime', format_header1)
 worksheet9.merge_range(0, 2, 1, 2, 'Powerfactory ime', format_header1)
 
+j=1
 for i in hours:
     # Hocemo v formatu Ura 1, Torek, 1.1.2030
     month, day, hour = dobiDatumIzUreVLetu(year, i)
     dayofweek = dobiDanVtednu(year, month, day)
-    worksheet9.merge_range(0, 3+2*i, 0, 4+2*i, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
+    worksheet9.merge_range(0, 2+2*j, 0, 3+2*j, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
     #worksheet9.write(0,3+2*i, 'Ura ' + str(hours[i]) + ', ' + str(dayofweek) + str(day) + '.' + str(month) + '.' + str(year), format_header1)
-    worksheet9.write(1, 3+2*i, 'P [MW]', format_header1)
-    worksheet9.write(1, 4+2*i, 'Q [Mvar]', format_header1)
+    worksheet9.write(1, 2+2*j, 'P [MW]', format_header1)
+    worksheet9.write(1, 3+2*j, 'Q [Mvar]', format_header1)
+    j+=1
 
 #Zapis sheeta 9 - porocilo kateri izracuni so konvergirali
 
@@ -775,7 +779,7 @@ for terminal in results_element_list_terminals:
     if (current_row % 2) == 0: row_format = format_data_lighter
     else: row_format = format_data_darker
     worksheet4.set_row(current_row, 18)
-    terminal_rated_voltage = 0
+    terminal_rated_voltage = df_terminal_info.at[terminal, 'nominal_voltage']
     terminal_grid = df_terminal_info.at[terminal, 'grid']
     terminal_area = df_terminal_info.at[terminal, 'area']
     terminal_zone = df_terminal_info.at[terminal, 'zone']
@@ -824,17 +828,17 @@ for terminal in results_element_list_terminals:
     worksheet5.write(current_row, 0, "", row_format)
     worksheet5.write(current_row, 1, "", row_format)
     worksheet5.write(current_row, 2, terminal, row_format)
-    for i in range(0,14):
+    for i in range(0,12):
         overvoltagepercent = i * 0.01
         endvoltage = float(1 + overvoltagepercent)
         dataframe_name = 'nad' + str(endvoltage)
         column_number = i + 3
         worksheet5.write(current_row, column_number, voltage_high_terminals.at[terminal, dataframe_name], row_format)
-    worksheet5.write(current_row, 17, "Zbiralka", row_format)
-    worksheet5.write(current_row, 18, terminal_rated_voltage, row_format)
-    worksheet5.write(current_row, 19, df_terminal_info.at[terminal, 'grid'], row_format)
-    worksheet5.write(current_row, 20, df_terminal_info.at[terminal, 'area'], row_format)
-    worksheet5.write(current_row, 21, df_terminal_info.at[terminal, 'zone'], row_format)
+    worksheet5.write(current_row, 15, "Zbiralka", row_format)
+    worksheet5.write(current_row, 16, terminal_rated_voltage, row_format)
+    worksheet5.write(current_row, 17, df_terminal_info.at[terminal, 'grid'], row_format)
+    worksheet5.write(current_row, 28, df_terminal_info.at[terminal, 'area'], row_format)
+    worksheet5.write(current_row, 29, df_terminal_info.at[terminal, 'zone'], row_format)
     
     #Osnovni podatki za worksheet 1
     worksheet6.set_row(current_row, 18)
@@ -907,20 +911,21 @@ for generator in results_element_list_generators:
     worksheet8.set_row(current_row, 18)
     worksheet8.write(current_row, 0, "", row_format)
     worksheet8.write(current_row, 1, "", row_format)
-    worksheet8.write(current_row, 2, generator, row_format)
-    for i in range(len(hours)):
+    worksheet8.write(current_row, 2, generator, row_format) 
+    j=1
+    for i in hours:
         try:
-            worksheet8.write(current_row, 3+2*i, round(df_results_generator_P_set_final.at[generator, str(hours[i])], 2), row_format)
-            worksheet8.write(current_row, 4+2*i, round(df_results_generator_Q_set_final.at[generator, str(hours[i])], 2), row_format)
+            worksheet8.write(current_row, 2+2*j, round(df_results_generator_P_set_final.at[generator, str(hours[i])], 2), row_format)
+            worksheet8.write(current_row, 3+2*j, round(df_results_generator_Q_set_final.at[generator, str(hours[i])], 2), row_format)
             # print("Zapisal")
         except:
-            worksheet8.write(current_row, 3+2*i, round(0, 2), row_format)
-            worksheet8.write(current_row, 4+2*i, round(0, 2), row_format)
+            worksheet8.write(current_row, 2+2*j, round(0, 2), row_format)
+            worksheet8.write(current_row, 3+2*j, round(0, 2), row_format)
             # print("Ni slo...")
-            
+        j+=1
     current_row += 1
         
-# Zzpisemo delovne in jalove moči po urah za bremena
+# Zapisemo delovne in jalove moči po urah za bremena
         
 print("Konc pisanja vrednosti generatorjev")
 print("Zacetek pisanja nastavljenih vrednosti P in Q generatorjev pu urah")
@@ -932,13 +937,15 @@ for load in results_element_list_loads:
     worksheet9.write(current_row, 0, "", row_format)
     worksheet9.write(current_row, 1, "", row_format)
     worksheet9.write(current_row, 2, load, row_format)
-    for i in range(len(hours)):
+    j=1
+    for i in hours:
         try:
-            worksheet9.write(current_row, 3+2*i, round(df_results_load_P_set_final.at[load, str(hours[i])], 2), row_format)
-            worksheet9.write(current_row, 4+2*i, round(df_results_load_Q_set_final.at[load, str(hours[i])], 2), row_format)
+            worksheet9.write(current_row, 2+2*j, round(df_results_load_P_set_final.at[load, str(hours[i])], 2), row_format)
+            worksheet9.write(current_row, 3+2*j, round(df_results_load_Q_set_final.at[load, str(hours[i])], 2), row_format)
         except:
-            worksheet9.write(current_row, 3+2*i, round(0, 2), row_format)
-            worksheet9.write(current_row, 4+2*i, round(0, 2), row_format)
+            worksheet9.write(current_row, 2+2*j, round(0, 2), row_format)
+            worksheet9.write(current_row, 3+2*j, round(0, 2), row_format)
+        j+=1
     current_row += 1
         
 print("Konec pisanja vrednosti generatorjev po urah")
