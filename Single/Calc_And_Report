@@ -581,24 +581,20 @@ def dobiDanVtednu(year, month, day):
     dayOfWeek %= 7
     return week[dayOfWeek]
 
-def contingencyCalcReport(hour):
-    # Run contingency analysis
-    app.PrintPlain("Izvedba contingency analiz")
-    ctg = app.GetFromStudyCase("ComSimoutage")
-    ctg.Execute()
-    app.PrintPlain("Ivoz contingency datotek")
-    if not os.path.exists(os.path.join(f_output_data_directory,"Contingencies")):
-        os.makedirs(os.path.join(f_output_data_directory,"Contingencies"))
-    # Export v S:\SlapnikL_Mag\Programi za analizo podatkov iz PowerFactory\Vmesni rezultati\Contingencies
-    contingency_report = app.GetFromStudyCase("ComRes")
-    contingency_report.iopt_exp = 6
-    contingency_report.f_name = os.path.join(f_output_data_directory,"Contingencies",("Contingency_"+str(hour)+".csv"))
-    # contingency_report.f_name = os.getcwd() + '\Vmesni rezultati\Contingencies\Contingency_' + str(hour) + '.csv'
-    contingency_report.Execute()
-    app.PrintInfo("Izvozeni contingency rezultati")
-    # Clear contingency results data
-    #contingency_results = app.GetFromStudyCase("Contingency Analysis AC.ElmRes")
-    #contingency_results.bClear()
+def ContingencyReport(hour):
+    t0 = time.time()
+    contingency_report_script = app.GetFromStudyCase("contingency_export.ComDpl")
+    contingency_report_script.SetInputParameterString("strPath", os.path.join(f_output_data_directory,"Contingencies",("Contingency_report_" + str(hour) + ".xlsx")))
+    # contingency_report_script.SetInputParameterString("strPath", "S:\SlapnikL_Mag\Predstavitev_Gradivo\Rezultati\Contingencies\neki.xlsx")
+    contingency_report_script.SetInputParameterInt("iHour", hour)
+    contingency_report_script.Execute()
+    # app.PrintPlain("Contingency report exported for hour: " + str(hour))
+    #contingency_report_script_python = app.GetFromStudyCase("test_script.ComPython")
+    #app.PrintPlain(contingency_report_script_python)
+    #contingency_report_script_python.Execute()
+    app.PrintPlain("Contingency report exported for hour: " + str(hour))
+    dt = time.time() - t0
+    app.PrintPlain("Potreben cas za contingency export: " + str(dt))
     return
 
 def IzdelajPorocilo():
