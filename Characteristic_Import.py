@@ -1,196 +1,266 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jan 27 14:44:29 2023
+Created on Sat May 28 08:49:17 2022
 
 @author: SSIMON
 """
 
-import os
+import pandas as pd
 import datetime
 import sys
-import pandas as pd
+#import numpy
+import os
+import time
 from tkinter import Tk
 from tkinter import filedialog
-
-############### PARAMETRI ##################################################################################
-#Ali laufamo v engine mode (spyder) ali se izvaja v PowerFactory
-engine_mode = False
-# ČE JE TRUE ŠE ROČNO DEFINIRAJ TOČNO IME PROJEKTA
-define_project_name = "your_powerfactory_project_name"
-
-#Parametri za izračun jalovih moči za gen, load, vac..... načeloma če delamo DC loadflow ni važno
-# Za AC loadflow je treba porihtat oz najt neke boljše načine dodeljevanja jalovih. 
-##########################################################################################################
-
-if engine_mode:
-    print("Running in engine mode")
-    sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2022 SP1\Python\3.9")
-
 import powerfactory as pf    
+import math
 app = pf.GetApplication()
-ldf = app.GetFromStudyCase("ComLdf")
-qds = app.GetFromStudyCase("ComStatsim")
 app.ClearOutputWindow()
-user = app.GetCurrentUser()
-app.PrintInfo(f"Current user: {user}")
-activestudycase = app.GetActiveStudyCase()
-app.PrintInfo(f"Current study case: {activestudycase}")
-scenario = app.GetActiveScenario()
-app.PrintInfo(f"Current scenario: {scenario}")
-fChars = app.GetProjectFolder("chars") #Characters folder in PowerFactory software
-fLibrary = app.GetProjectFolder("lib") #Get library folder
+ldf = app.GetFromStudyCase("ComLdf")
 
-if engine_mode:
-    #Če je engine mode funkcije menjamo za navadn print
-    app.PrintPlain = print
-    app.PrintInfo = print
-    app.PrintWarn = print
-    app.PrintError = print
-    
-    #Ime projekta
-    app.ActivateProject(define_project_name)
-    prj = app.GetActiveProject()
-    activestudycase = app.GetActiveStudyCase()
-    scenario = app.GetActiveScenario()
-    
-    print("User: " + str(user))
-    print("Project: " + str(prj))
-    print("Study Case: " + str(activestudycase))
-    print("Scenario: " + str(scenario))
-    
-###################################Izpis start cajta skripte##############################################
+##########################################################################################################################################################################
+#############################################################################   PARAMETRI   ##############################################################################
+##########################################################################################################################################################################
+# Parametri za izračun jalovih moči za gen, load, vac..... načeloma če delamo DC loadflow ni važno
+# Za AC loadflow je treba porihtat oz najt neke boljše načine dodeljevanja jalovih.
+# spreminjaj_jalovo = False  # Ali skripta sploh spreminja parametre proizvodnje/porabe jalove moči. False - jalova enaka, True - jalovo spreminja
+# izhodiscni_cosfi = True     # Ce je true, bo cosfi enak kot v izhodiscnem modelu, sicer vzame vrednosti definirane spodaj (razmerje med Q in P)
+
+#Namesto cosfi se vnese razmerje PQ_ratio = tan(acos(cosfi(0.xx)))
+#Pri cosfi 0.98 ~ 0.2
+#Pri cosfi 0.97 ~ 0.25
+#Pri cosfi 0.96 ~ 0.3
+# generator_PQ_ratio = 0.25 #Delez jalove
+# load_PQ_ratio = 0.25
+# voltagesource_PQ_ratio = 0
+
+#Izkoristek omrezja (izgube)
+# izkoristek_omrezja = 0.97 #(1-izgube)
+
+#Imena uvoženih datotek, glej da se sklada z tistim kar nardi skripta za pretvorbo excel->csv. Ne rabis spreminjati
+stringParameters = "Parametri.xlsx"
+stringMarketDataFile = "Market Data.csv"
+stringBorderFlowFile = "Robna vozlisca P.csv"
+stringBorderInfoFile = "Robna vozlisca Info.csv"
+stringIzbranaPFile = "Izbrana vozlisca P.csv"
+stringIzbranaQFile = "Izbrana vozlisca Q.csv"
+stringIzbranaInfoFile = "Izbrana vozlisca Info.csv"
+
+#   ['UKNI','UK00','UA02','UA01','TR00','TN00','SK00','SI00','SE04','SE03','SE02','SE01','SA00','RU00',
+#   'RS00','RO00','PT00','PS00','PL00','NSW0','NOS0','NON1','NOM1','NL00','MT00','MK00','ME00','MD00',
+#   'MA00','LY00','LV00','LUV1','LUG1','LUF1','LUB1','LT00','ITSI','ITSA','ITS1','ITN1','ITCS','ITCN',
+#   'ITCA','IS00','IL00','IE00','HU00','HR00','GR03','GR00','FR15','FR00','FI00','ES00','ELES Interconnectios',
+#   'EG00','EE00','DZ00','DKW1','DKKF','DEKF','DE00','CZ00','CY00','CH00','BG00','BE00','BA00','AT00','AL00']
+
+#Drzave/sistemi, ki jim spreminjamo parametre. Vnesi tako kot je v market datoteki ali v powerfactory modelu
+# sistemi_spreminjanje_parametrov = ['SI00','ITN1','HU00','HR00','ELES Interconnectios']
+
+##########################################################################################################################################################################
+#############################################################################   PARAMETRI   ##############################################################################
+##########################################################################################################################################################################
+
+
 start_time = datetime.datetime.now().time().strftime('%H:%M:%S')
 app.PrintPlain("Pričetek izvajanja programa ob " + str(start_time) + ".")
 # else: print("Pričetek izvajanja programa ob " + str(start_time) + ".")
-##########################################################################################################
 
-# if True:
-#     # PF ma omejitev 40 znakov zato krajšamo zarad imen karakteristik 
-#     # na koncu se dodaja P in Q in če ma element 40 znakov bi mela karakteristika 41 kar vrže error
-#     for generator in generators:
-#         if len(generator.loc_name) > 38: generator.loc_name = generator.loc_name[:-1]
-#         if len(generator.loc_name) > 38: generator.loc_name = generator.loc_name[:-1]
-#     for load in loads:
-#         if len(load.loc_name) > 38: load.loc_name = load.loc_name[:-1]
-#         if len(load.loc_name) > 38: load.loc_name = load.loc_name[:-1]
-#     for voltagesource in voltagesources:
-#         if len(voltagesource.loc_name) > 38: voltagesource.loc_name = voltagesource.loc_name[:-1]
-#         if len(voltagesource.loc_name) > 38: voltagesource.loc_name = voltagesource.loc_name[:-1]
+# IMPORT PODATKOV
+app.PrintPlain("Izberi mapo z vhodnimi podatki (lahko je v ozadju)!")
+Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+f_input_data_directory = filedialog.askdirectory()
+app.PrintPlain("Mapa izbrana!")
+#Beri datoteke
+app.PrintPlain("Uvoz market datoteke")
+dfMD = pd.read_csv(os.path.join(f_input_data_directory, stringMarketDataFile), index_col = [0])
+app.PrintPlain("Uvoz podatkov čezmejnih pretokov")
+dfCbFlow = pd.read_csv(os.path.join(f_input_data_directory, stringBorderFlowFile), index_col = [0])
+dfCbInfo = pd.read_csv(os.path.join(f_input_data_directory, stringBorderInfoFile), index_col = [0])
+app.PrintPlain("Uvoz izbranih vozlisc")
+dfIzbP = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaPFile), header = [0], index_col = [0])
+dfIzbQ = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaQFile), header = [0], index_col = [0])
+dfIzbInfo = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaInfoFile), header = [0])
+app.PrintPlain("Datoteke uvozene")
+# df_select_nodes_info = pd.read_csv(input_path_select_nodes_info, index_col = [1], header = [0])
+# return dfMD, dfCbFlow, dfCbInfo, dfIzbP, dfIzbQ, dfIzbInfo 
 
-if True:
-    #Open excel files
-    Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-    app.PrintPlain("Izberi vhodno mapo")
-    dirFolder = filedialog.askdirectory()
-    file_gen_list = []
-    file_load_list = []
-    # Daj na true ce mamo .csv datoteke
-    havecsvfiles = True
-    for root, dirs, files in os.walk(dirFolder):
-        for file in files:
-            if havecsvfiles:
-                if "GEN" in file and file.endswith(".csv"):
-                    file_gen_list.append(os.path.join(root, file))
-                if "LOAD" in file and file.endswith(".csv"):
-                    file_load_list.append(os.path.join(root, file))
-            else:
-                if "GEN" in file and file.endswith(".xlsx"):
-                    file_gen_list.append(os.path.join(root, file))
-                if "LOAD" in file and file.endswith(".xlsx"):
-                    file_load_list.append(os.path.join(root, file))
-        
-    app.PrintPlain("Mapa izbrana, uvažam datoteke")
-    # print(file_gen_list)
-    # print(file_load_list)
- 
-    #FOR GENS
-    dfDataGen = pd.DataFrame()
-    dfGenNodeType = pd.DataFrame()
-    dfGenU = pd.DataFrame()
-    dfGenP = pd.DataFrame()
-    dfGenQ = pd.DataFrame()
+dfParams = pd.read_excel(os.path.join(f_input_data_directory, stringParameters), sheet_name = 'Parametri', index_col = 0, header = 0)
+dfGrids = pd.read_excel(os.path.join(f_input_data_directory, stringParameters), sheet_name = 'Drzave', index_col = 0, header = 0)
+
+if dfParams.at['KONSTANTNA JALOVA', 'VREDNOST'] == 'DA':
+    spreminjaj_jalovo = False
+elif dfParams.at['KONSTANTNA JALOVA', 'VREDNOST'] == 'NE':
+    spreminjaj_jalovo = True
+else:
+    spreminjaj_jalovo = False
     
-    for file1_loc in file_gen_list:
-        print(f"Import fajla {file1_loc}")
-        if havecsvfiles:
-            dfDataGen_Temp = pd.read_csv(file1_loc, index_col = 1)
-        else:
-            file1 = pd.ExcelFile(file1_loc)
-            file1_sheets = file1.sheet_names
-            dfDataGen_Temp = pd.DataFrame()
-            dfDataGen_Temp = file1.parse(file1_sheets[0], index_col = 1)
+if dfParams.at['IZHODISCNI COSFI', 'VREDNOST'] == 'DA':
+    izhodiscni_cosfi = True
+elif dfParams.at['IZHODISCNI COSFI', 'VREDNOST'] == 'NE':
+    izhodiscni_cosfi = False
+else:
+    izhodiscni_cosfi = True
+
+try: generator_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI GENERATORJI', 'VREDNOST']))
+except: generator_PQ_ratio = 0.2
+
+try: load_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI BREMENA', 'VREDNOST']))
+except: load_PQ_ratio = 0.2
+
+try: robna_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI ROBNA', 'VREDNOST']))
+except: robna_PQ_ratio = 0.2
+
+try: izkoristek_omrezja = 1 - dfParams.at['IZGUBE OMREZJA', 'VREDNOST']
+except: izkoristek_omrezja = 1
+
+sistemi_spreminjanje_parametrov = []
+
+for country in dfGrids.index.to_list():
+    if dfGrids.at[country, 'MODIFIKACIJA PARAMETROV'] == 'DA':
+        sistemi_spreminjanje_parametrov.append(country)
         
-        dfGenNodeType_Temp = pd.DataFrame()
-        dfGenU_Temp = pd.DataFrame()
-        dfGenU_Temp_unom = pd.DataFrame()
-        dfGenP_Temp = pd.DataFrame()
-        dfGenQ_Temp = pd.DataFrame()
+app.PrintPlain("DRZAVE KATERE MODIFICIRAMO:")
+app.PrintPlain(sistemi_spreminjanje_parametrov)
+
+app.PrintPlain("Racunanje koeficientov generatorjev")
+#NAJDI VSA IZBRANA IN VSE GEN
+gen_izbrana = []
+gen_other = []
+market_grid_type_list = dfMD.columns.tolist()
+app.PrintPlain(market_grid_type_list)
+izbrana_list = dfIzbInfo.columns.tolist()
+dgen_grid_type = {}
+for generator in app.GetCalcRelevantObjects("*.ElmSym"):
+    generator_name = generator.loc_name
+    generator_grid = generator.cpGrid.loc_name
+    if generator_name in dfIzbQ:
+        gen_izbrana.append(generator)
+    elif generator_grid in sistemi_spreminjanje_parametrov:
+        try:generator_type = str(''.join(generator.pBMU.desc))
+        except:generator_type = str(''.join(generator.desc))
+        generator_grid_type = generator_grid + "_" + generator_type
+        if generator_grid_type in market_grid_type_list:
+            gen_other.append(generator)
+            dgen_grid_type[generator] = generator_grid_type    
+#Get ratios SUM and then calc ratio
+grid_type_sum = {}
+for generator in gen_other:
+    try: grid_type_sum[dgen_grid_type[generator]] += generator.pgini
+    except: grid_type_sum[dgen_grid_type[generator]] = generator.pgini
+#Now calc ratio 
+gen_ratio = {}
+gen_PQratio = {}
+for generator in gen_other:
+    try: gen_ratio[generator] = generator.pgini/grid_type_sum[dgen_grid_type[generator]]
+    #Če je error bo 0 in nastavimo 0
+    except: gen_ratio[generator] = 0
+app.PrintPlain("Izracunani koeficienti generatorjev")
+app.PrintPlain(gen_ratio)
+
+app.PrintPlain("Racunanje koeficientov bremen")
+#NAJDI VSA IZBRANA IN VSE LOAD
+load_izbrana = []
+load_other = []
+# market_grid_type_list = dfMD.columns.tolist() # ZE MAMO
+# izbrana_list = dfIzbInfo.columns.tolist() # ZE MAMO
+dload_grid_type = {}
+for load in app.GetCalcRelevantObjects("*.ElmLod"):
+    load_name = load.loc_name
+    load_grid = load.cpGrid.loc_name
+    if load_name in izbrana_list:
+        load_izbrana.append(load)
+    elif load_grid in sistemi_spreminjanje_parametrov:
+        load_grid_type = load_grid + "_LOAD"
+        if load_grid_type in market_grid_type_list:
+            load_other.append(load)
+            dload_grid_type[load] = load_grid_type
+#Get ratios SUM and then calc ratio
+# grid_type_sum = {} ze mamo od generatorjev, load je kot type grid_LOAD
+for load in load_other:
+    try: grid_type_sum[dload_grid_type[load]] += load.plini
+    except: grid_type_sum[dload_grid_type[load]] = load.plini
+#Now calc ratio 
+load_ratio = {}
+load_PQratio = {}
+for load in load_other:
+    try: load_ratio[load] = load.plini/grid_type_sum[dload_grid_type[load]]
+    #Če je error bo 0 in nastavimo 0
+    except: load_ratio[load] = 0
+    try: load_PQratio[load] = load.qlini/load.plini
+    except: load_PQratio[load] = 0
+app.PrintPlain("Izracunani koeficientov bremen")
+app.PrintPlain(load_ratio)
+
+voltagesource_list = dfCbInfo.index.to_list()
+robna_list = []
+robna_PQratio = {}
+for voltagesource in app.GetCalcRelevantObjects("*.ElmVac"):
+    voltagesource_name = voltagesource.loc_name
+    voltagesource_grid = voltagesource.cpGrid.loc_name
+    if voltagesource_name in voltagesource_list and voltagesource_grid in sistemi_spreminjanje_parametrov:
+        robna_list.append(voltagesource)
+        robna_PQratio[voltagesource] = voltagesource.Qgen/voltagesource.Pgen
+app.PrintPlain("Robna vozlisca:")
+app.PrintPlain(voltagesource_list)
+app.PrintPlain(robna_list)
         
-        dfGenNodeType_Temp = dfDataGen_Temp[dfDataGen_Temp['U_P/Q'] == "Node Type"].drop(["Node name", "Napetost", "U_P/Q"], axis = 'columns')
-        dfGenU_Temp = dfDataGen_Temp[dfDataGen_Temp['U_P/Q'] == "U (kV)"]
-        dfGenU_Temp_unom['Napetost'] = dfGenU_Temp['Napetost']
-        dfGenU_Temp = dfDataGen_Temp[dfDataGen_Temp['U_P/Q'] == "U (kV)"].drop(["Node name", "Napetost", "U_P/Q"], axis = 'columns')
-        dfGenU_Temp = dfGenU_Temp.divide(dfGenU_Temp_unom['Napetost'], axis=0)
-        dfGenP_Temp = dfDataGen_Temp[dfDataGen_Temp['U_P/Q'] == "Gen (MW)"].drop(["Node name", "Napetost", "U_P/Q"], axis = 'columns')
-        dfGenQ_Temp = dfDataGen_Temp[dfDataGen_Temp['U_P/Q'] == "Gen (Mvar)"].drop(["Node name", "Napetost", "U_P/Q"], axis = 'columns')
+#Uredi podatke, odstej izbrana od market
+global df_checking
+df_checking = pd.DataFrame()
+global df_izbrana_grid_type_sum
+global dfMarketSlo
+dfMarketSlo = dfMD.filter(regex='SI00')
+df_izbrana_grid_type_sum = pd.DataFrame()
+df_checking["Market SUM"] = dfMarketSlo["SI00_sum"]
+
+#suma izbranih voslisc po tipu energenta
+for izb_voz in dfIzbP.columns:
+    # dfIzbInfo.drop(labels = 'Unnamed: 0', axis = 1, inplace = True)
+    izb_grid_type = dfIzbInfo.at[0,izb_voz]
+    try:
+        df_izbrana_grid_type_sum[izb_grid_type] = df_izbrana_grid_type_sum[izb_grid_type] + dfIzbP[izb_voz]
+    except:
+        df_izbrana_grid_type_sum[izb_grid_type] = dfIzbP[izb_voz]
         
-        dfDataGen = pd.concat([dfDataGen, dfDataGen_Temp])
-        dfGenNodeType = pd.concat([dfGenNodeType, dfGenNodeType_Temp])
-        dfGenU = pd.concat([dfGenU, dfGenU_Temp])
-        dfGenP = pd.concat([dfGenP, dfGenP_Temp])
-        dfGenQ = pd.concat([dfGenQ, dfGenQ_Temp])
+#Mam df sume izbranih vozlisc
+#Se kompletno
+app.PrintPlain("obdelava podatkov")
+cols_to_sum = [col for col in df_izbrana_grid_type_sum.columns if "LOAD" not in col]
+df_izbrana_grid_type_sum["SI00_sum"] = df_izbrana_grid_type_sum.apply(lambda row: row[cols_to_sum].sum(), axis=1)
+df_checking["Izbrana SUM"] = df_izbrana_grid_type_sum["SI00_sum"]
+
+delta = dfMarketSlo.sub(df_izbrana_grid_type_sum, fill_value = 0)
+list_type_ignore = ["28","29","44","45"]
+for column in delta.columns.to_list():
+    if not any(type_ignore in column for type_ignore in list_type_ignore):
+        delta[column] = delta[column].clip(lower = 0)
         
-        # Handle missing data
-        dfGenNodeType = dfGenNodeType.fillna(2.0) #Replace with 2 for missing data (PV)
-        # V datoteki 0 = PQ, 2 = PV spremenimo v 0 = PV, 1 = PQ
-        dfGenNodeType = dfGenNodeType.replace(to_replace=0, value=1)
-        dfGenNodeType = dfGenNodeType.replace(to_replace=2, value=0)
-        
-        dfGenU = dfGenU.interpolate(method='linear', axis = 1) #To pa interpolira manjkajoče vrednosti
-        dfGenP = dfGenP.interpolate(method='linear', axis = 1)
-        dfGenQ = dfGenQ.interpolate(method='linear', axis = 1)
-        dfGenU = dfGenU.fillna(1.0)
-        dfGenP = dfGenP.fillna(0.0)
-        dfGenQ = dfGenQ.fillna(0.0)
-        
-        
-    #FOR LOADS
-    dfDataLoad = pd.DataFrame()
-    dfLoadP = pd.DataFrame()
-    dfLoadQ = pd.DataFrame()
+prefixes = {col[:4] for col in delta.columns}
+for prefix in prefixes:
+    cols_to_sum = [col for col in delta.columns if col.startswith(prefix) and "sum" not in col and "LOAD" not in col and "Balance" not in col and "Dump" not in col and "DSR" not in col]
+    delta["SI00_NEWmarketsum"] = delta.apply(lambda row: row[cols_to_sum].sum(), axis=1)
+
+df_checking["Market-IzbranaSUM"] = delta["SI00_NEWmarketsum"]
+df_checking["New Mark+Izb SUM"] = df_checking["Market-IzbranaSUM"] + df_checking["Izbrana SUM"]
+df_checking["New DELTA"] = df_checking["New Mark+Izb SUM"] - df_checking["Market SUM"]
+
+for column in dfMD.columns.to_list():
+    if column in delta:
+        dfMD[column] = delta[column]
+        # app.PrintPlain(f"Subtracted {column} in delta from market")
     
-    for file2_loc in file_load_list:
-        print(f"Import fajla {file1_loc}")
-        if havecsvfiles:
-            dfDataLoad_Temp = pd.read_csv(file2_loc, index_col = 1)
-        else:
-            file2 = pd.ExcelFile(file2_loc)
-            file2_sheets = file2.sheet_names
-            dfDataLoad_Temp = pd.DataFrame()
-            dfDataLoad_Temp = file2.parse(file2_sheets[0], index_col = 1)
-            
-        dfLoadP_Temp = pd.DataFrame()
-        dfLoadQ_Temp = pd.DataFrame()
-        
-        dfLoadP_Temp = dfDataLoad_Temp[dfDataLoad_Temp['P/Q'] == "MW"].drop(["Node name", "P/Q"], axis = 'columns')
-        dfLoadQ_Temp = dfDataLoad_Temp[dfDataLoad_Temp['P/Q'] == "Mvar"].drop(["Node name", "P/Q"], axis = 'columns')
-        
-        dfDataLoad = pd.concat([dfDataLoad, dfDataLoad_Temp])
-        dfLoadP = pd.concat([dfLoadP, dfLoadP_Temp])
-        dfLoadQ = pd.concat([dfLoadQ, dfLoadQ_Temp])
-        
-        dfLoadP = dfLoadP.interpolate(method='linear', axis = 1)
-        dfLoadQ = dfLoadQ.interpolate(method='linear', axis = 1)
-        dfLoadP = dfLoadP.fillna(0.0)
-        dfLoadQ = dfLoadQ.fillna(0.0)
-
-    app.PrintPlain("Datoteke uvozene in obdelane")
+    # replace_negatives = lambda x: 0 if x < 0 and x.name != 'SI00_29' else x
+    # delta = delta.apply(replace_negatives)
+    # delta = delta.applymap(lambda x: 0 if x < 0 and "28" not in x.name and "29" not in x.name and "44" not in x.name and "45" not in x.name else x)
+    # dfMarketData = dfMarketData - df_izbrana_grid_type_sum
     
-############################ DATA IMPORTED ######################
+    # dfMarketData[] = df.apply(lambda row: row[[col for col in df.columns if col.startswith('C')]].sum(),
 
-app.PrintPlain("Zacenjam uvoz v powerfactory")
-
+####################################################  UVOZ V POWERFACTORY  ##############################################################################
+    
+app.PrintPlain("Izdelava karakteristik in uvoz podatkov v powerfactory")
 #Make time scale for a year in libry folder
+fLibrary = app.GetProjectFolder("lib") #Get library folder
 timescale_name = "Time Scale"
 timescale = fLibrary.SearchObject(timescale_name)
 if not timescale:
@@ -207,95 +277,140 @@ if timescale:
     timescale_vector = list(range(1,8761))
     timescale.SetAttribute("scale", timescale_vector)
     app.PrintPlain("Edited " + timescale_name + " vector!")
-
-#Delete current station(external) controllers in project
-if False: 
-    for stationcontroller in app.GetCalcRelevantObjects("*.ElmStactrl"): 
-        stationcontroller.Delete()
-
-for generator in app.GetCalcRelevantObjects("*.ElmSym"):
+      
+#Se za gen
+for generator in gen_izbrana:
     generator_name = generator.GetAttribute("loc_name")
-    if generator_name in dfGenNodeType.index:
+    try:
         #Assign P vector
-        # Remove old data
         for chaOld in generator.GetContents("pgini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
         chaPgini = generator.CreateObject("ChaVec", "pgini")
         chaPgini.SetAttribute("scale", timescale)
-        chaPgini.SetAttribute("vector", dfGenP.loc[generator_name].to_list())
+        chaPgini.SetAttribute("vector", dfIzbP[generator_name].to_list())
         chaPgini.SetAttribute("usage", 2)
         app.PrintPlain(f"Created and assigned {chaPgini} for {generator}")
-        
-        #Create station controller for generator
-        stationcontroller = generator.GetParent().CreateObject("ElmStactrl", generator_name + "_SC.ElmStactrl") 
-        # Remove old data
-        for elmStacontOld in generator.GetContents("c_pstac*.ElmStactrl"): elmStacontOld.Delete() 
-        # Assign controller to generator
-        generator.SetAttribute("c_pstac", stationcontroller)
-        # Assign control nodes (generator terminal for voltage and cub for reactive power Q) 
-        stationcontroller.SetAttribute("rembar", generator.GetAttribute("bus1").GetAttribute("cterm"))
-        stationcontroller.SetAttribute("p_cub", generator.GetAttribute("bus1"))
-        app.PrintPlain(f"Created and assigned {stationcontroller} for {generator}")
-        
-        # Characteristic for Type
-        # Remove old data
-        for chaOld in stationcontroller.GetContents("i_ctrl*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaSC_Type = stationcontroller.CreateObject("ChaVec", "i_ctrl") #attribute name, has to be the name of the ChaRef to make the link
-        chaSC_Type.SetAttribute("scale", timescale)
-        chaSC_Type.SetAttribute("vector", dfGenNodeType.loc[generator_name].to_list())
-        chaSC_Type.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned type characteristic {chaSC_Type}")
-        
-        # Create characteritic for voltage U
-        # Remove old data
-        for chaOld in stationcontroller.GetContents("usetp*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaSC_U = stationcontroller.CreateObject("ChaVec", "usetp") #attribute name, has to be the name of the ChaRef to make the link
-        chaSC_U.SetAttribute("scale", timescale)
-        chaSC_U.SetAttribute("vector", dfGenU.loc[generator_name].to_list())
-        chaSC_U.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned voltage U characteristic {chaSC_U}")
-        
-        # Characteristic for Q
-        # Remove old data
-        for chaOld in stationcontroller.GetContents("qsetp*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaSC_Q = stationcontroller.CreateObject("ChaVec", "qsetp") #attribute name, has to be the name of the ChaRef to make the link
-        chaSC_Q.SetAttribute("scale", timescale)
-        chaSC_Q.SetAttribute("vector", dfGenQ.loc[generator_name].to_list())
-        chaSC_Q.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned reactive power Q characteristic {chaSC_Q}")
-        
-for load in app.GetCalcRelevantObjects("*.ElmLod"):
-    load_name = load.GetAttribute("loc_name")
-    if load_name in dfLoadP.index:
+    except: app.PrintPlain(f"Error creating char P for {generator}")
+    try:
+        #Assign Q vector
+        for chaOld in generator.GetContents("qgini*.ChaVec"): chaOld.Delete() 
+        chaQgini = generator.CreateObject("ChaVec", "qgini")
+        chaQgini.SetAttribute("scale", timescale)
+        chaQgini.SetAttribute("vector", dfIzbQ[generator_name].to_list())
+        chaQgini.SetAttribute("usage", 2)
+        app.PrintPlain(f"Created and assigned {chaQgini} for {generator}")
+    except: app.PrintPlain(f"Error creating char Q for {generator}")
+    
+for generator in gen_other:
+    try:
         #Assign P vector
-        # Remove old data
+        for chaOld in generator.GetContents("pgini*.ChaVec"): chaOld.Delete() 
+        chaPgini = generator.CreateObject("ChaVec", "pgini")
+        chaPgini.SetAttribute("scale", timescale)
+        p_vector = [val * gen_ratio[generator] for val in dfMD[dgen_grid_type[generator]].to_list()]
+        chaPgini.SetAttribute("vector", p_vector)
+        chaPgini.SetAttribute("usage", 2)
+        app.PrintPlain(f"Created and assigned {chaPgini} for {generator}")
+    except: app.PrintPlain(f"Error creating char P for {generator}")
+    if spreminjaj_jalovo:
+        try:
+            #Assign Q vector
+            for chaOld in generator.GetContents("qgini*.ChaVec"): chaOld.Delete() 
+            if izhodiscni_cosfi: 
+                q_vector = [val * gen_PQratio[generator] for val in p_vector]
+            else: #Cosfi iz parametrov
+                q_vector = [val * generator_PQ_ratio for val in p_vector]
+            chaQgini = generator.CreateObject("ChaVec", "qgini")
+            chaQgini.SetAttribute("scale", timescale)
+            chaQgini.SetAttribute("vector", q_vector)
+            chaQgini.SetAttribute("usage", 2)
+            app.PrintPlain(f"Created and assigned {chaQgini} for {generator}")
+        except: app.PrintPlain(f"Error creating char Q for {generator}")
+    
+for load in load_izbrana:
+    load_name = load.GetAttribute("loc_name")
+    try:
+        #Assign P vector
         for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
         chaPlini = load.CreateObject("ChaVec", "plini")
         chaPlini.SetAttribute("scale", timescale)
-        chaPlini.SetAttribute("vector", dfLoadP.loc[load_name].to_list())
+        chaPlini.SetAttribute("vector", dfIzbP[load_name].to_list())
         chaPlini.SetAttribute("usage", 2)
         app.PrintPlain(f"Created and assigned {chaPlini} for {load}")
-        
+    except: app.PrintPlain(f"Error creating char P for {load}")
+    try:
         #Assign Q vector
-        # Remove old data
         for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
         chaQlini = load.CreateObject("ChaVec", "qlini")
         chaQlini.SetAttribute("scale", timescale)
-        chaQlini.SetAttribute("vector", dfLoadQ.loc[load_name].to_list())
+        chaQlini.SetAttribute("vector", dfIzbQ[load_name].to_list())
         chaQlini.SetAttribute("usage", 2)
         app.PrintPlain(f"Created and assigned {chaQlini} for {load}")
+    except: app.PrintPlain(f"Error creating char Q for {load}")
     
+for load in load_other:
+    load_name = load.GetAttribute("loc_name")
+    try:
+        #Assign P vector
+        for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
+        chaPlini = load.CreateObject("ChaVec", "plini")
+        chaPlini.SetAttribute("scale", timescale)
+        p_vector = [val * load_ratio[load] * izkoristek_omrezja for val in dfMD[dload_grid_type[load]].to_list()]
+        chaPlini.SetAttribute("vector", p_vector)
+        chaPlini.SetAttribute("usage", 2)
+        app.PrintPlain(f"Created and assigned {chaPlini} for {load}")
+    except: app.PrintPlain(f"Error creating char P for {load}")
+    if spreminjaj_jalovo:
+        try:
+            # Assign Q vector
+            # Remove old data
+            for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
+            # Assign controller to load
+            if izhodiscni_cosfi: 
+                q_vector = [val * load_PQratio[load] for val in p_vector]
+            else: #Cosfi iz parametrov
+                q_vector = [val * load_PQ_ratio for val in p_vector]
+            chaQlini = load.CreateObject("ChaVec", "qlini")
+            chaQlini.SetAttribute("scale", timescale)
+            chaQlini.SetAttribute("vector", q_vector)
+            chaQlini.SetAttribute("usage", 2)
+            app.PrintPlain(f"Created and assigned {chaQlini} for {load}")
+        except: app.PrintPlain(f"Error creating char Q for {load}")
+        
+for voltagesource in robna_list:
+    voltagesource_name = voltagesource.GetAttribute("loc_name")
+    try:
+        #Assign P vector
+        for chaOld in voltagesource.GetContents("Pgen*.ChaVec"): chaOld.Delete() 
+        chaPgen = voltagesource.CreateObject("ChaVec", "Pgen")
+        chaPgen.SetAttribute("scale", timescale)
+        p_vector = [val * dfCbInfo.at[voltagesource_name,'DELEZ'] * dfCbInfo.at[voltagesource_name,'POMNOZITI'] for  val in dfCbFlow[dfCbInfo.at[voltagesource_name,'MEJA']].to_list()]
+        chaPgen.SetAttribute("vector", p_vector)
+        chaPgen.SetAttribute("usage", 2)
+        app.PrintPlain(f"Created and assigned {chaPgen} for {voltagesource}")
+    except: app.PrintPlain(f"Error creating char P for {voltagesource}")
+    if spreminjaj_jalovo:
+        try:
+            # Assign Q vector
+            # Remove old data
+            for chaOld in voltagesource.GetContents("Qgen*.ChaVec"): chaOld.Delete() 
+            # Assign controller to load
+            if izhodiscni_cosfi: 
+                q_vector = [val * robna_PQratio[voltagesource] for val in p_vector]
+            else: #Cosfi iz parametrov
+                q_vector = [val * robna_PQ_ratio for val in p_vector]
+            chaQlini = load.CreateObject("ChaVec", "qlini")
+            chaQlini.SetAttribute("scale", timescale)
+            chaQlini.SetAttribute("vector", q_vector)
+            chaQlini.SetAttribute("usage", 2)
+            app.PrintPlain(f"Created and assigned {chaQlini} for {load}")
+        except: app.PrintPlain(f"Error creating char Q for {load}")
 
-#################### IZPIS URE ################# KONEC #############################
+#################################################################################### MAIN #######################################################
+
+#################### IZPIS URE #################
 
 end_time = datetime.datetime.now().time().strftime('%H:%M:%S')
 total_time=(datetime.datetime.strptime(end_time,'%H:%M:%S') - datetime.datetime.strptime(start_time,'%H:%M:%S'))
 now = datetime.datetime.now()
 current_time = now.strftime("%H:%M:%S")
 app.PrintPlain("Konec izvajanja programa ob " + str(current_time) + ". Potreben čas: " + str(total_time) + '.')
-# else: print("Konec izvajanja programa ob " + str(current_time) + ". Potreben čas: " + str(total_time) + '.')
