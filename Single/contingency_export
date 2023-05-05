@@ -1,0 +1,39 @@
+!DPL Script for exporting power
+
+object oTable;
+set sReports;
+int iCount;
+string strPath;
+int iReset;
+object oContingencyAnalysis;
+object oContingencyReport;
+object case,
+       elmRes;
+set resObjs;
+
+!Execute contingency analysis
+oContingencyAnalysis = GetFromStudyCase('ComSimoutage');
+oContingencyAnalysis.Execute();
+
+!Generate contingency report
+oContingencyReport = GetFromStudyCase('ComCntreport');
+oContingencyReport.Execute();
+
+!Get report and export it
+sReports=GetTableReports();
+
+iCount=sReports.Count();
+!printf('%i',iCount);
+
+if(iCount>=1){
+  for(oTable=sReports.First();oTable;oTable=sReports.Next()){
+    oTable.ExportToExcel(strPath,0); ! the 1 opens the file directly
+  }
+}
+
+CloseTableReports();
+oCase = GetActiveStudyCase();
+resObjs = case.GetContents(' * .ElmRes',0); ! get all ElmRes stored in case
+for (elmRes=resObjs.First(); elmRes; elmRes=resObjs.Next()) {
+  elmRes.Clear();
+  }
