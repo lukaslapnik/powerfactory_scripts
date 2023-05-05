@@ -1,0 +1,1555 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat May 28 08:49:17 2022
+
+@author: SSIMON
+"""
+
+import pandas as pd
+import datetime
+import sys
+#import numpy
+import os
+import time
+from tkinter import Tk
+from tkinter import filedialog
+import powerfactory as pf    
+from datetime import datetime as dt
+from datetime import timedelta as td
+import xlsxwriter
+import math
+app = pf.GetApplication()
+app.ClearOutputWindow()
+ldf = app.GetFromStudyCase("ComLdf")
+
+##########################################################################################################################################################################
+#############################################################################   PARAMETRI   ##############################################################################
+##########################################################################################################################################################################
+# Parametri za izračun jalovih moči za gen, load, vac..... načeloma če delamo DC loadflow ni važno
+# Za AC loadflow je treba porihtat oz najt neke boljše načine dodeljevanja jalovih.
+# spreminjaj_jalovo = False  # Ali skripta sploh spreminja parametre proizvodnje/porabe jalove moči. False - jalova enaka, True - jalovo spreminja
+# izhodiscni_cosfi = True     # Ce je true, bo cosfi enak kot v izhodiscnem modelu, sicer vzame vrednosti definirane spodaj (razmerje med Q in P)
+
+#Namesto cosfi se vnese razmerje PQ_ratio = tan(acos(cosfi(0.xx)))
+#Pri cosfi 0.98 ~ 0.2
+#Pri cosfi 0.97 ~ 0.25
+#Pri cosfi 0.96 ~ 0.3
+# generator_PQ_ratio = 0.25 #Delez jalove
+# load_PQ_ratio = 0.25
+# voltagesource_PQ_ratio = 0
+
+#Izkoristek omrezja (izgube)
+# izkoristek_omrezja = 0.97 #(1-izgube)
+
+#Ure za katere skripta naredi izracune. Definiraj zacetno uro, koncno uro in inkrement/korak
+# zacetna_ura = 1
+# koncna_ura = 70
+# inkrement = 3
+
+#Imena uvoženih datotek, glej da se sklada z tistim kar nardi skripta za pretvorbo excel->csv
+stringParameters = "Parametri.xlsx"
+stringMarketDataFile = "Market Data.csv"
+stringBorderFlowFile = "Robna vozlisca P.csv"
+stringBorderInfoFile = "Robna vozlisca Info.csv"
+stringIzbranaPFile = "Izbrana vozlisca P.csv"
+stringIzbranaQFile = "Izbrana vozlisca Q.csv"
+stringIzbranaInfoFile = "Izbrana vozlisca Info.csv"
+
+#   ['UKNI','UK00','UA02','UA01','TR00','TN00','SK00','SI00','SE04','SE03','SE02','SE01','SA00','RU00',
+#   'RS00','RO00','PT00','PS00','PL00','NSW0','NOS0','NON1','NOM1','NL00','MT00','MK00','ME00','MD00',
+#   'MA00','LY00','LV00','LUV1','LUG1','LUF1','LUB1','LT00','ITSI','ITSA','ITS1','ITN1','ITCS','ITCN',
+#   'ITCA','IS00','IL00','IE00','HU00','HR00','GR03','GR00','FR15','FR00','FI00','ES00','ELES Interconnectios',
+#   'EG00','EE00','DZ00','DKW1','DKKF','DEKF','DE00','CZ00','CY00','CH00','BG00','BE00','BA00','AT00','AL00']
+
+#Drzave/sistemi, ki jim spreminjamo parametre. Vnesi tako kot je v market datoteki ali v powerfactory modelu
+# sistemi_spreminjanje_parametrov = ['SI00','ITN1','HU00','HR00','ELES Interconnectios']
+
+#Drzave*sistemki, za katere se izpisujejo rezultati
+# sistemi_izpis_rezultatov = ['SI00', 'ELES Interconnectios']
+
+##########################################################################################################################################################################
+#############################################################################   PARAMETRI   ##############################################################################
+##########################################################################################################################################################################
+
+start_time = datetime.datetime.now().time().strftime('%H:%M:%S')
+app.PrintPlain("Pričetek izvajanja programa ob " + str(start_time) + ".")
+
+#CREATE AND ACTIVATE A NEW STUDY CASE
+fscenarios = app.GetProjectFolder("scen")
+scenario = fscenarios.GetContents("Default operation scenario.*")[0] #Characters folder
+new_scenario = fscenarios.AddCopy(scenario)
+new_scenario.SetAttribute("loc_name", "NOVA STUDIJA - PREIMENUJ")
+new_scenario.Activate()
+app.PrintPlain(f"Created a new scenario: {new_scenario}")
+
+# IMPORT PODATKOV
+app.PrintPlain("Izberi mapo z vhodnimi podatki (lahko je v ozadju)!")
+Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+f_input_data_directory = filedialog.askdirectory()
+app.PrintPlain("Mapa izbrana!")
+app.PrintPlain("Izberi mapo z za shranjevanje izhodnih podatkov!")
+f_output_data_directory = filedialog.askdirectory()
+app.PrintPlain("Mapa izbrana!")
+#Beri datoteke
+dfParams = pd.read_excel(os.path.join(f_input_data_directory, stringParameters), sheet_name = 'Parametri', index_col = 0, header = 0)
+dfGrids = pd.read_excel(os.path.join(f_input_data_directory, stringParameters), sheet_name = 'Drzave', index_col = 0, header = 0)
+dfHours = pd.read_excel(os.path.join(f_input_data_directory, stringParameters), sheet_name = 'Ure', index_col = 0, header = 0)
+
+app.PrintPlain("Uvoz market datoteke")
+dfMD = pd.read_csv(os.path.join(f_input_data_directory, stringMarketDataFile), index_col = [0])
+app.PrintPlain("Uvoz podatkov čezmejnih pretokov")
+dfCbFlow = pd.read_csv(os.path.join(f_input_data_directory, stringBorderFlowFile), index_col = [0])
+dfCbInfo = pd.read_csv(os.path.join(f_input_data_directory, stringBorderInfoFile), index_col = [0])
+app.PrintPlain("Uvoz izbranih vozlisc")
+dfIzbP = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaPFile), header = [0], index_col = [0])
+dfIzbQ = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaQFile), header = [0], index_col = [0])
+dfIzbInfo = pd.read_csv(os.path.join(f_input_data_directory, stringIzbranaInfoFile), header = [0])
+app.PrintPlain("Datoteke uvozene")
+# df_select_nodes_info = pd.read_csv(input_path_select_nodes_info, index_col = [1], header = [0])
+# return dfMD, dfCbFlow, dfCbInfo, dfIzbP, dfIzbQ, dfIzbInfo 
+
+app.PrintPlain("Uvoz parametrov")
+#Racunanje vrednost po prejsnjem cosfi ali po doocenem cosfi
+if dfParams.at['GENERIRAJ POROCILO', 'VREDNOST'] == 'DA':
+    izdelava_porocila = True
+elif dfParams.at['GENERIRAJ POROCILO', 'VREDNOST'] == 'NE':
+    izdelava_porocila = False
+else:
+    izdelava_porocila = True
+  
+if dfParams.at['CONTINGENCY', 'VREDNOST'] == 'DA':
+    contingency_report = True
+elif dfParams.at['CONTINGENCY', 'VREDNOST'] == 'NE':
+    contingency_report = False
+else:
+    contingency_report = True
+
+if dfParams.at['KONSTANTNA JALOVA', 'VREDNOST'] == 'DA':
+    spreminjaj_jalovo = False
+elif dfParams.at['KONSTANTNA JALOVA', 'VREDNOST'] == 'NE':
+    spreminjaj_jalovo = True
+else:
+    KONSTANTNA_JALOVA = True
+    
+if dfParams.at['IZHODISCNI COSFI', 'VREDNOST'] == 'DA':
+    izhodiscni_cosfi = True
+elif dfParams.at['IZHODISCNI COSFI', 'VREDNOST'] == 'NE':
+    izhodiscni_cosfi = False
+else:
+    izhodiscni_cosfi = True
+
+try: generator_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI GENERATORJI', 'VREDNOST']))
+except: generator_PQ_ratio = 0.2
+
+try: load_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI BREMENA', 'VREDNOST']))
+except: load_PQ_ratio = 0.2
+
+try: robna_PQ_ratio = math.tan(math.acos(dfParams.at['COSFI ROBNA', 'VREDNOST']))
+except: robna_PQ_ratio = 0.2
+
+try: izkoristek_omrezja = 1 - dfParams.at['IZGUBE OMREZJA', 'VREDNOST']
+except: izkoristek_omrezja = 1
+
+sistemi_spreminjanje_parametrov = []
+sistemi_izpis_rezultatov = []
+for country in dfGrids.index.to_list():
+    if dfGrids.at[country, 'MODIFIKACIJA PARAMETROV'] == 'DA':
+        sistemi_spreminjanje_parametrov.append(country)
+    if dfGrids.at[country, 'IZPIS REZULTATOV'] == 'DA':
+        sistemi_izpis_rezultatov.append(country)
+        
+app.PrintPlain("DRZAVE KATERE MODIFICIRAMO:")
+app.PrintPlain(sistemi_spreminjanje_parametrov)
+
+app.PrintPlain("DRZAVE KATERE IZPISUJEMO:")
+app.PrintPlain(sistemi_izpis_rezultatov)
+
+#hours_to_calculate = []
+# for item in df_input_hours.index:
+#     hour = df_input_hours.index
+#     hours_to_calculate.append(hour)
+    
+# hours = dfHours['URA'].tolist()
+hours = dfHours.index.tolist()
+app.PrintPlain("URE KATERE RACUNAMO:")
+app.PrintPlain(hours)
+
+# if clear_output_folder:
+#     app.PrintPlain("Clearing partial results data")
+#     # Find folders in partial results folder
+#     #file_list = list()
+#     for root, dirs, files in os.walk(f_output_data_directory, topdown = False):
+#         for file in files:
+#             file_path = os.path.join(root, file)
+#             os.remove(file_path)
+#             #file_list.append(file_path)
+#             if True: app.PrintInfo("Removed file: " + file_path)
+
+app.PrintPlain("Racunanje delezev generatorjev")
+#NAJDI VSA IZBRANA IN VSE GEN
+gen_izbrana = []
+gen_other = []
+market_grid_type_list = dfMD.columns.tolist()
+app.PrintPlain(market_grid_type_list)
+izbrana_list = dfIzbInfo.columns.tolist()
+dgen_grid_type = {}
+for generator in app.GetCalcRelevantObjects("*.ElmSym"):
+    generator_name = generator.loc_name
+    generator_grid = generator.cpGrid.loc_name
+    if generator_name in dfIzbQ:
+        gen_izbrana.append(generator)
+    elif generator_grid in sistemi_spreminjanje_parametrov:
+        try:generator_type = str(''.join(generator.pBMU.desc))
+        except:generator_type = str(''.join(generator.desc))
+        generator_grid_type = generator_grid + "_" + generator_type
+        if generator_grid_type in market_grid_type_list:
+            gen_other.append(generator)
+            dgen_grid_type[generator] = generator_grid_type    
+#Get ratios SUM and then calc ratio
+grid_type_sum = {}
+for generator in gen_other:
+    try: grid_type_sum[dgen_grid_type[generator]] += generator.pgini
+    except: grid_type_sum[dgen_grid_type[generator]] = generator.pgini
+#Now calc ratio 
+gen_ratio = {}
+for generator in gen_other:
+    try: gen_ratio[generator] = generator.pgini/grid_type_sum[dgen_grid_type[generator]]
+    #Če je error bo 0 in nastavimo 0
+    except: gen_ratio[generator] = 0
+app.PrintPlain("Izracunano!")
+app.PrintPlain(gen_ratio)
+
+app.PrintPlain("Racunanje delezev bremen!")
+#NAJDI VSA IZBRANA IN VSE LOAD
+load_izbrana = []
+load_other = []
+# market_grid_type_list = dfMD.columns.tolist() # ZE MAMO
+# izbrana_list = dfIzbInfo.columns.tolist() # ZE MAMO
+dload_grid_type = {}
+for load in app.GetCalcRelevantObjects("*.ElmLod"):
+    load_name = load.loc_name
+    load_grid = load.cpGrid.loc_name
+    if load_name in izbrana_list:
+        load_izbrana.append(load)
+    elif load_grid in sistemi_spreminjanje_parametrov:
+        load_grid_type = load_grid + "_LOAD"
+        if load_grid_type in market_grid_type_list:
+            load_other.append(load)
+            dload_grid_type[load] = load_grid_type
+#Get ratios SUM and then calc ratio
+# grid_type_sum = {} ze mamo od generatorjev, load je kot type grid_LOAD
+for load in load_other:
+    try: grid_type_sum[dload_grid_type[load]] += load.plini
+    except: grid_type_sum[dload_grid_type[load]] = load.plini
+#Now calc ratio 
+load_ratio = {}
+for load in load_other:
+    try: load_ratio[load] = generator.pgini/grid_type_sum[dload_grid_type[load]]
+    #Če je error bo 0 in nastavimo 0
+    except: load_ratio[load] = 0
+app.PrintPlain("Izracunano!")
+app.PrintPlain(load_ratio)
+
+voltagesource_list = dfCbInfo.index.to_list()
+robna_list = []
+for voltagesource in app.GetCalcRelevantObjects("*.ElmVac"):
+    voltagesource_name = voltagesource.loc_name
+    voltagesource_grid = voltagesource.cpGrid.loc_name
+    if voltagesource_name in voltagesource_list and voltagesource_grid in sistemi_spreminjanje_parametrov:
+        robna_list.append(voltagesource)
+
+#Filter for results writing
+lgen_results = []
+for generator in app.GetCalcRelevantObjects("*.ElmSym"):
+    if generator.cpGrid.loc_name in sistemi_izpis_rezultatov:
+        lgen_results.append(generator)
+        
+lload_results = []
+for load in app.GetCalcRelevantObjects("*.ElmLod"):
+    if load.cpGrid.loc_name in sistemi_izpis_rezultatov:
+        lload_results.append(load)
+        
+lline_results = []
+for line in app.GetCalcRelevantObjects("*.ElmLne"):
+    if line.cpGrid.loc_name in sistemi_izpis_rezultatov:
+        lline_results.append(line)
+        
+ltra_results = []
+for transformer in app.GetCalcRelevantObjects("*.ElmTr2"):
+    transformer_name = transformer.loc_name
+    if transformer.cpGrid.loc_name in sistemi_izpis_rezultatov and "/" not in transformer_name and "GT" not in transformer_name and "TES" not in transformer_name and transformer.IsOutOfService() == 0:
+        ltra_results.append(transformer)
+        
+lterm_results = []
+terminal_voltages_write_out = [110,220,400]
+for terminal in app.GetCalcRelevantObjects("*.ElmTerm"):
+    terminal_name = terminal.loc_name
+    if terminal.cpGrid.loc_name in sistemi_izpis_rezultatov and "-" not in terminal_name and terminal.uknom in terminal_voltages_write_out and terminal.IsOutOfService() == 0:
+        lterm_results.append(terminal)
+    
+app.PrintPlain("Obdelava in priprava vhodnih podatkov!")
+#Uredi podatke, odstej izbrana od market itd.
+global df_checking
+df_checking = pd.DataFrame()
+global df_izbrana_grid_type_sum
+global dfMarketSlo
+dfMarketSlo = dfMD.filter(regex='SI00')
+df_izbrana_grid_type_sum = pd.DataFrame()
+df_checking["Market SUM"] = dfMarketSlo["SI00_sum"]
+
+#suma izbranih voslisc po tipu energenta
+for izb_voz in dfIzbP.columns:
+    # dfIzbInfo.drop(labels = 'Unnamed: 0', axis = 1, inplace = True)
+    izb_grid_type = dfIzbInfo.at[0,izb_voz]
+    try:
+        df_izbrana_grid_type_sum[izb_grid_type] = df_izbrana_grid_type_sum[izb_grid_type] + dfIzbP[izb_voz]
+    except:
+        df_izbrana_grid_type_sum[izb_grid_type] = dfIzbP[izb_voz]
+        
+#Mam df sume izbranih vozlisc
+#Se kompletno
+cols_to_sum = [col for col in df_izbrana_grid_type_sum.columns if "LOAD" not in col]
+df_izbrana_grid_type_sum["SI00_sum"] = df_izbrana_grid_type_sum.apply(lambda row: row[cols_to_sum].sum(), axis=1)
+df_checking["Izbrana SUM"] = df_izbrana_grid_type_sum["SI00_sum"]
+
+delta = dfMarketSlo.sub(df_izbrana_grid_type_sum, fill_value = 0)
+list_type_ignore = ["28","29","44","45"]
+for column in delta.columns.to_list():
+    if not any(type_ignore in column for type_ignore in list_type_ignore):
+        delta[column] = delta[column].clip(lower = 0)
+        
+prefixes = {col[:4] for col in delta.columns}
+for prefix in prefixes:
+    cols_to_sum = [col for col in delta.columns if col.startswith(prefix) and "sum" not in col and "LOAD" not in col and "Balance" not in col and "Dump" not in col and "DSR" not in col]
+    delta["SI00_NEWmarketsum"] = delta.apply(lambda row: row[cols_to_sum].sum(), axis=1)
+
+df_checking["Market-IzbranaSUM"] = delta["SI00_NEWmarketsum"]
+df_checking["New Mark+Izb SUM"] = df_checking["Market-IzbranaSUM"] + df_checking["Izbrana SUM"]
+df_checking["New DELTA"] = df_checking["New Mark+Izb SUM"] - df_checking["Market SUM"]
+
+for column in dfMD.columns.to_list():
+    if column in delta:
+        dfMD[column] = delta[column]
+        app.PrintPlain(f"Subtracted {column} in delta from market")
+
+#Funkcija za nstavitev vozlisc
+def setNodes(hour):
+    app.PrintPlain("Nastavitev vozlisc bremen!")
+    for load in load_izbrana:
+        load_name = load.loc_name
+        try:load.plini = dfIzbP.at[hour,load_name]
+        except:app.PrintPlain(f"Ni podatka delovne P ali je 0 za {load}, brez sprememb")
+        try:load.qlini = dfIzbQ.at[hour,load_name]
+        except:app.PrintPlain(f"Ni podatka jalove Q ali je 0 za {load}, brez sprememb")
+    for load in load_other:
+        load_name = load.loc_name
+        load_grid_type = dload_grid_type[load]
+        load.plini = float(dfMD.at[hour,load_grid_type]) * load_ratio[load] * izkoristek_omrezja
+        # app.PrintPlain(f"{load} P set")
+        # load.qlini = load.plini * 
+        
+    #Se za gen
+    app.PrintPlain("Nastavitev vozlisc generatorjev!")
+    for generator in gen_izbrana:
+        generator_name = generator.loc_name
+        try:generator.pgini = dfIzbP.at[hour,generator_name]
+        except:app.PrintPlain(f"Ni podatka delovne P ali je 0 za {generator}, brez sprememb")
+        try:generator.qgini = dfIzbQ.at[hour,generator_name]
+        except:app.PrintPlain(f"Ni podatka jalove Q ali je 0 za {generator}, brez sprememb")
+    for generator in gen_other:
+        generator_name = generator.loc_name
+        generator_grid_type = dgen_grid_type[generator]
+        # app.PrintPlain(f"{generator} with {generator_grid_type} P set") 
+        generator.pgini = float(dfMD.at[hour,generator_grid_type]) * gen_ratio[generator]
+        
+    app.PrintPlain("Nastavitev robnih vozlisc!")
+    for voltagesource in robna_list:
+        voltagesource_name = voltagesource.loc_name
+        border = dfCbInfo.at[voltagesource_name,'MEJA']
+        ratio = dfCbInfo.at[voltagesource_name,'DELEZ']
+        multiplier = dfCbInfo.at[voltagesource_name,'POMNOZITI']
+        try: voltagesource.Pgen = float(dfCbFlow.at[hour, border]) * ratio * multiplier
+        except: app.PrintPlain("Error pri nastravljanju robnega!")
+
+def saveElementData():
+    app.PrintPlain("Izpis parametrov")
+    global df_data_generators
+    df_data_generators = pd.DataFrame(data=None)
+    global df_data_loads
+    df_data_loads = pd.DataFrame(data=None)
+    global df_data_lines
+    df_data_lines = pd.DataFrame(data=None)
+    global df_data_transformers
+    df_data_transformers = pd.DataFrame(data=None)
+    global df_data_terminals
+    df_data_terminals = pd.DataFrame(data=None)
+    path_info_gen = os.path.join(f_output_data_directory,("Gen_Info.csv"))
+    path_info_load = os.path.join(f_output_data_directory,("Load_Info.csv"))
+    path_info_line = os.path.join(f_output_data_directory,("Line_Info.csv"))
+    path_info_tra = os.path.join(f_output_data_directory,("Transformer_Info.csv"))
+    path_info_term = os.path.join(f_output_data_directory,("Terminal_Info.csv"))
+    
+    app.PrintPlain("Izpis parametrov generatorjev")
+    for generator in lgen_results:
+        generator_name = generator.loc_name
+        generator_grid = generator.cpGrid.loc_name
+        try: generator_area = generator.cpArea.loc_name
+        except: generator_area = "NOAREA"
+        try: generator_zone = generator.cpZone.loc_name
+        except: generator_area = "NOZONE"
+        df_data_generators.at[generator_name, 'grid'] = generator_grid
+        df_data_generators.at[generator_name, 'area'] = generator_area
+        df_data_generators.at[generator_name, 'zone'] = generator_zone
+    df_data_generators.to_csv(path_info_gen, encoding='utf-8', index=True)
+            
+    app.PrintPlain("Izpis parametrov bremen")
+    for load in lload_results:
+        load_name = load.loc_name
+        load_grid = load.cpGrid.loc_name
+        try: load_area = load.cpArea.loc_name
+        except: load_area = "NOAREA"
+        try: load_zone = load.cpZone.loc_name
+        except: load_area = "NOZONE"
+        df_data_loads.at[load_name, 'grid'] = load_grid
+        df_data_loads.at[load_name, 'area'] = load_area
+        df_data_loads.at[load_name, 'zone'] = load_zone
+    df_data_loads.to_csv(path_info_load, encoding='utf-8', index=True)
+    
+    app.PrintPlain("Izpis parametrov daljnovodov")
+    for line in lline_results:
+        line_name = line.loc_name
+        line_grid = line.cpGrid.loc_name
+        try: line_area = line.cpArea.loc_name
+        except: line_area = "NOAREA"
+        try: line_zone = line.cpZone.loc_name
+        except: line_area = "NOZONE"
+        line_rated_voltage = line.typ_id.uline #Nazivna napetost v kV
+        line_rated_current = round(line.typ_id.sline * 1000) #Nazivni tok v A
+        line_rated_power = round(line_rated_voltage * line_rated_current * 1.73205 / 1000) # Nazivna moč MW
+        df_data_lines.at[line_name, 'rated_voltage'] = line_rated_voltage
+        df_data_lines.at[line_name, 'rated_current'] = line_rated_current
+        df_data_lines.at[line_name, 'rated_power'] = line_rated_power
+        df_data_lines.at[line_name, 'grid'] = line_grid
+        df_data_lines.at[line_name, 'area'] = line_area
+        df_data_lines.at[line_name, 'zone'] = line_zone
+    df_data_lines.to_csv(path_info_line, encoding='utf-8', index=True)
+    
+    app.PrintPlain("Izpis parametrov transformatorjev")
+    for transformer in ltra_results:
+        transformer_name = transformer.loc_name
+        transformer_grid = transformer.cpGrid.loc_name
+        try: transformer_area = transformer.cpArea.loc_name
+        except: transformer_area = "NOAREA"
+        try: transformer_zone = transformer.cpZone.loc_name
+        except: transformer_area = "NOZONE"
+        df_data_transformers.at[transformer_name, 'grid'] = transformer_grid
+        df_data_transformers.at[transformer_name, 'area'] = transformer_area
+        df_data_transformers.at[transformer_name, 'zone'] = transformer_zone
+    df_data_transformers.to_csv(path_info_tra, encoding='utf-8', index=True)
+            
+    app.PrintPlain("Izpis informacij zbiralk")
+    for terminal in lterm_results:
+        terminal_name = terminal.loc_name
+        terminal_grid = terminal.cpGrid.loc_name
+        terminal_nominal_voltage = terminal.uknom
+        try: terminal_area = terminal.cpArea.loc_name
+        except: terminal_area = "NOAREA"
+        try: terminal_zone = terminal.cpZone.loc_name
+        except: terminal_zone = "NOZONE"
+        df_data_terminals.at[terminal_name, 'nominal_voltage'] = terminal_nominal_voltage
+        df_data_terminals.at[terminal_name, 'grid'] = terminal_grid
+        df_data_terminals.at[terminal_name, 'area'] = terminal_area
+        df_data_terminals.at[terminal_name, 'zone'] = terminal_zone
+    df_data_terminals.to_csv(path_info_term, encoding='utf-8', index=True)
+    return
+
+# #PISANJE REZULTATOV V DATAFRAME
+def resultExport(hour):
+    app.PrintPlain("Writing element results for hour: " + str(hour))
+    app.PrintPlain("Zapis rezultatov moci generatorjev")
+    for generator in lgen_results:
+        if generator.IsOutOfService() == 0:
+            generator_name = generator.loc_name
+            df_results_generator_P_set.at[generator_name, hour] = generator.GetAttribute("pgini")
+            df_results_generator_Q_set.at[generator_name, hour] = generator.GetAttribute("qgini")
+            
+    app.PrintPlain("Zapis rezultatov moci bremen")
+    for load in lload_results:
+        if load.IsOutOfService() == 0:
+            load_name = load.loc_name
+            df_results_load_P_set.at[load_name, hour] = load.GetAttribute("plini")
+            df_results_load_Q_set.at[load_name, hour] = load.GetAttribute("qlini")
+    
+    #Najprej zapisemo rezultate v dataframe za daljnovode
+    app.PrintPlain("Zapis rezultatov obremenitev daljnovodov")
+    for line in lline_results:
+        line_name = line.loc_name
+        if line.HasResults() == 1:
+            line_loading = line.GetAttribute('c:loading')
+        else:
+            line_loading = int(0)
+        df_results_line_loading_hourly.at[line_name, hour] = line_loading
+            
+    #Nato se rezultate za transformatorje
+    app.PrintPlain("Zapis rezultatov obremenitev transformatorjev")
+    for transformer in ltra_results:
+        transformer_name = transformer.loc_name
+        # hardcoded je da odstanimo trafote kjer je v imenu "/" ker so to 110/xx kV trafoti ponavadi od generatorjev
+        if transformer.HasResults() == 1:
+            transformer_loading = transformer.GetAttribute('c:loading')
+        else:
+            transformer_loading = int(0)
+        df_results_transformer_loading_hourly.at[transformer_name, hour] = transformer_loading
+            
+    app.PrintPlain("Zapis rezultatov napetosti zbiralk")
+    #Modelirane so tudi nizjenapetostne zbiralke zato izpisemo samo te z napetnstnega nivoja 110, 220. 400 kV. Ven damo tut "odcepe" ki majo v imenu -
+    for terminal in lterm_results:
+        terminal_name = terminal.loc_name
+        if terminal.HasResults() == 1:
+            terminal_voltage_pu = terminal.GetAttribute('m:u')
+        else:
+            terminal_voltage_pu = int(0)
+        df_results_voltage_hourly.at[terminal_name, hour] = terminal_voltage_pu
+    
+    app.PrintPlain("Izpisani rezultati " + str(hour) + ". ure")
+    return
+
+def dobiDatumIzUreVLetu(leto, uravletu):
+    #leto = 2022
+    #uravletu = 1
+    # leto, mesec, dan, ura = dobiDatumIzUreVLetu(leto,uravletu)
+    # danVtednu = dobiDanVtednu(leto, mesec, dan)
+    # print ("Datum: " + str(dan) + '.' + str(mesec) + '.' + str(leto) + ' ob ' + str(ura) + ':00 (' + danVtednu + ').')
+    
+    prestopno = 0
+    # preverimo ce je leto prestopno
+    if(leto%4==0 and leto%100!=0 or leto%400==0):
+        prestopno = 24
+
+    # Create the starting date as a `datetime` object.
+    start = dt(leto, 1, 1, 0, 0, 0)
+    # List initialiser.
+    result = [start]
+    
+    # Build a list of datetime objects for each hour of the year.
+    for i in range(1, 8760 + prestopno):
+        start += td(seconds=3600)
+        result.append(start)
+    
+    # Initialise a DataFrame data structure.
+    df = pd.DataFrame({'dates': result})
+    # Add each column by extracting the object of interest from the datetime.
+    df['8760'] = df.index + 1
+    df['month'] = df['dates'].dt.month
+    df['day'] = df['dates'].dt.day
+    df['hour'] = df['dates'].dt.hour
+    # Remove the datetime object column.
+    df.drop(['dates'], inplace=True, axis=1)
+    #df['8760'][ura-1]
+    mesec = df['month'][uravletu - 1]
+    dan = df['day'][uravletu - 1]
+    ura = df['hour'][uravletu - 1]
+    #df['month'][ura-1]
+    return mesec,dan,ura
+
+def dobiDanVtednu(year, month, day):
+    # leto = 2022
+    # uravletu = 1
+    # leto, mesec, dan, ura = dobiDatumIzUreVLetu(leto,uravletu)
+    # danVtednu = dobiDanVtednu(leto, mesec, dan)
+    # print ("Datum: " + str(dan) + '.' + str(mesec) + '.' + str(leto) + ' ob ' + str(ura) + ':00 (' + danVtednu + ').')
+    
+    offset = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    week   = ['Nedelja', 
+              'Ponedeljek', 
+              'Torek', 
+              'Sreda', 
+              'Četrtek',  
+              'Petek', 
+              'Sobota']
+    afterFeb = 1
+    if month > 2: afterFeb = 0
+    aux = year - 1700 - afterFeb
+    # dayOfWeek for 1700/1/1 = 5, Friday
+    dayOfWeek  = 5
+    # partial sum of days betweem current date and 1700/1/1
+    dayOfWeek += (aux + afterFeb) * 365                  
+    # leap year correction    
+    dayOfWeek += aux // 4 - aux // 100 + (aux + 100) // 400     
+    # sum monthly and day offsets
+    dayOfWeek += offset[month - 1] + (day - 1)               
+    dayOfWeek %= 7
+    return week[dayOfWeek]
+
+def contingencyCalcReport(hour):
+    # Run contingency analysis
+    app.PrintPlain("Izvedba contingency analiz")
+    ctg = app.GetFromStudyCase("ComSimoutage")
+    ctg.Execute()
+    app.PrintPlain("Ivoz contingency datotek")
+    if not os.path.exists(os.path.join(f_output_data_directory,"Contingencies")):
+        os.makedirs(os.path.join(f_output_data_directory,"Contingencies"))
+    # Export v S:\SlapnikL_Mag\Programi za analizo podatkov iz PowerFactory\Vmesni rezultati\Contingencies
+    contingency_report = app.GetFromStudyCase("ComRes")
+    contingency_report.iopt_exp = 6
+    contingency_report.f_name = os.path.join(f_output_data_directory,"Contingencies",("Contingency_"+str(hour)+".csv"))
+    # contingency_report.f_name = os.getcwd() + '\Vmesni rezultati\Contingencies\Contingency_' + str(hour) + '.csv'
+    contingency_report.Execute()
+    app.PrintInfo("Izvozeni contingency rezultati")
+    # Clear contingency results data
+    #contingency_results = app.GetFromStudyCase("Contingency Analysis AC.ElmRes")
+    #contingency_results.bClear()
+    return
+
+def IzdelajPorocilo():
+    ##################### PARAMETRI ######################
+    
+    year = 2030
+        
+    #####################################################
+    
+    df_results_line_loading_hourly.to_csv(line_loading_file_path, encoding='utf-8', index=True)
+    df_results_transformer_loading_hourly.to_csv(transformer_loading_file_path, encoding='utf-8', index=True)
+    df_results_voltage_hourly.to_csv(voltage_file_path, encoding='utf-8', index=True)
+    df_results_generator_P_set.to_csv(generator_P_set_file_path, encoding='utf-8', index=True)
+    df_results_generator_Q_set.to_csv(generator_Q_set_file_path, encoding='utf-8', index=True)
+    df_results_load_P_set.to_csv(load_P_set_file_path, encoding='utf-8', index=True)
+    df_results_load_Q_set.to_csv(load_Q_set_file_path, encoding='utf-8', index=True)
+    
+    # Daljnovodi...
+    df_line_info = pd.read_csv(os.path.join(f_output_data_directory,"Line_Info.csv"), index_col = 0)
+    df_results_line_loading_final = df_results_line_loading_hourly
+    # Transformatorji...
+    df_transformer_info = pd.read_csv(os.path.join(f_output_data_directory,"Transformer_Info.csv"), index_col = 0)
+    df_results_transformer_loading_final = df_results_transformer_loading_hourly
+    # Zbiralke...
+    df_terminal_info = pd.read_csv(os.path.join(f_output_data_directory,"Terminal_Info.csv"), index_col = 0)
+    df_results_terminal_voltage_final = df_results_voltage_hourly
+    # Bremena...
+    df_load_info = pd.read_csv(os.path.join(f_output_data_directory,"Load_Info.csv"), index_col = 0)
+    df_results_load_P_set_final = df_results_generator_P_set
+    df_results_load_Q_set_final = df_results_generator_Q_set
+    # Generatorji...
+    df_generator_info = pd.read_csv(os.path.join(f_output_data_directory,"Gen_Info.csv"), index_col = 0)
+    df_results_generator_P_set_final = df_results_load_P_set
+    df_results_generator_Q_set_final = df_results_load_Q_set
+    
+    print("Podatki uvoženi, zacnenjam obdelavo!")
+    
+    hours = df_results_line_loading_final.columns.to_list()
+    hours = list(map(int, hours))
+    
+    t1 = time.time()
+    # dt0 = t1 - t0
+    # print("Cas uvoza in izpisa zdruzenih podatkov: " + str (dt0))
+    
+    #Liste elementov, ker se dela izpis samo za te
+    results_element_list_generators = df_results_generator_P_set_final.index
+    results_element_list_loads = df_results_load_P_set_final.index
+    results_element_list_lines = df_results_line_loading_final.index
+    results_element_list_transformers = df_results_transformer_loading_final.index
+    results_element_list_terminals = df_results_terminal_voltage_final.index
+    
+    # print("Generatorji za izpis: " + str(results_element_list_generators))
+    # print("Loadi za izpis: " + str(results_element_list_loads))
+    # print("DV za izpis: " + str(results_element_list_lines))
+    # print("TR za izpis: " + str(results_element_list_transformers))
+    # print("Zbiralke za izpis: " + str(results_element_list_terminals))
+    
+    #Najvisje 3 obremenitve daljnovodov v obdobju
+    df_temp1 = df_results_line_loading_final
+    max_no1 = pd.DataFrame()
+    max_no1['max_no1_loading'] = df_temp1.idxmax(axis=1)
+    m = df_temp1.columns.to_numpy() == max_no1['max_no1_loading'].to_numpy()[:, None]
+    df_temp1 = df_temp1.mask(m)
+    max_no1['max_no2_loading'] = df_temp1.idxmax(axis=1)
+    m = df_temp1.columns.to_numpy() == max_no1['max_no2_loading'].to_numpy()[:, None]
+    df_temp1 = df_temp1.mask(m)
+    max_no1['max_no3_loading'] = df_temp1.idxmax(axis=1)
+    #NAN menjamo z 0 da ne pride do napak. Mogoce boljse poskrbet da do tega v prvem ne pride, filanje je taktak...
+    max_no1.fillna(int(0), inplace = True)
+    
+    #Najvisje 3 obremenitve transformatorjev v obdobju
+    df_temp2 = df_results_transformer_loading_final
+    max_no2 = pd.DataFrame()
+    max_no2['max_no1_loading'] = df_temp2.idxmax(axis=1)
+    m = df_temp2.columns.to_numpy() == max_no2['max_no1_loading'].to_numpy()[:, None]
+    df_temp2 = df_temp2.mask(m)
+    max_no2['max_no2_loading'] = df_temp2.idxmax(axis=1)
+    m = df_temp2.columns.to_numpy() == max_no2['max_no2_loading'].to_numpy()[:, None]
+    df_temp2 = df_temp2.mask(m)
+    max_no2['max_no3_loading'] = df_temp2.idxmax(axis=1)
+    #NAN menjamo z 0 da ne pride do napak. Mogoce boljse poskrbet da do tega v prvem ne pride, filanje je taktak...
+    max_no2.fillna(int(0), inplace = True)
+    
+    max_no3 = pd.DataFrame()
+    #Dobimo se najvisje 3 in najnizje 3 napetosti v obdobju.
+    #Problem z NAN "vrednostmi". Naceloma se lahko nardi adaptivno da to dela samo ce so vsaj 3 ure "simulirane"
+    df_temp3 = df_results_terminal_voltage_final.mask(df_results_terminal_voltage_final == 0)
+    #Iskanje najvisjih 3 napetost
+    max_no3['max_no1_voltage'] = df_temp3.idxmax(axis=1)
+    m = df_temp3.columns.to_numpy() == max_no3['max_no1_voltage'].to_numpy()[:, None]
+    df_temp3 = df_temp3.mask(m)
+    max_no3['max_no2_voltage'] = df_temp3.idxmax(axis=1)
+    m = df_temp3.columns.to_numpy() == max_no3['max_no2_voltage'].to_numpy()[:, None]
+    df_temp3 = df_temp3.mask(m)
+    max_no3['max_no3_voltage'] = df_temp3.idxmax(axis=1)
+    
+    #shranjene najvisje 3 napetosti zbiralk, zdaj se najnizje 3 napetosti
+    max_no3['min_no1_voltage'] = df_temp3.idxmin(axis=1)
+    m = df_temp3.columns.to_numpy() == max_no3['min_no1_voltage'].to_numpy()[:, None]
+    df_temp3 = df_temp3.mask(m)
+    max_no3['min_no2_voltage'] = df_temp3.idxmin(axis=1)
+    m = df_temp3.columns.to_numpy() == max_no3['min_no2_voltage'].to_numpy()[:, None]
+    df_temp3 = df_temp3.mask(m)
+    max_no3['min_no3_voltage'] = df_temp3.idxmin(axis=1)
+    
+    max_no3.fillna(int(1), inplace = True)
+    
+    t2 = time.time()
+    dt1 = t2 - t1
+    print("Cas maxmin vrednosti: " + str (dt1))
+    
+    # Obremenitve nad dolocenim % za daljnovode v korakih po 10%
+    percent_loading_lines = pd.DataFrame()
+    for i in range(0,16):
+        #dataframe_name = 'nad' + str(i*10)
+        percent_loading_lines['nad' + str(i*10)] = df_results_line_loading_final.iloc[:,0:].ge(float(i*10)).sum(axis=1)
+    
+    # Se obremenitve za transformatorje
+    percent_loading_transformers = pd.DataFrame()
+    for i in range(0,16):
+        #dataframe_name = 'nad' + str(i*10)
+        percent_loading_transformers['nad' + str(i*10)] = df_results_transformer_loading_final.iloc[:,0:].ge(float(i*10)).sum(axis=1)
+    
+    # Napetosti pri daljnovodh v per-unit ker so razlicni napetostni nivoji in sicer v korakih po 0.005 oz 0,5%
+    voltage_high_terminals = pd.DataFrame()
+    for i in range(0,14):
+        voltage_high_terminals['nad' + str(1 + i * 0.01)] = df_results_terminal_voltage_final.iloc[:,0:].ge(float(1 + i * 0.01)).sum(axis=1)
+        #df['Count']=df.iloc[:,1:].ge(df.iloc [:,0],axis=0).sum(axis=1)
+    
+    voltage_low_terminals = pd.DataFrame()
+    for i in range(0,14):
+        voltage_low_terminals['pod' + str(1 - i * 0.01)] = df_results_terminal_voltage_final.iloc[:,0:].le(float(1 - i * 0.01)).sum(axis=1)
+        
+    # https://stackoverflow.com/questions/65802624/how-to-find-the-number-of-consecutive-values-greater-than-n-looking-back-from-t
+    line_list = df_results_line_loading_final.index
+    above_list = []
+    loading_start = 0
+    loading_stop = 110
+    loading_inc = 10
+    filter_limit = 60 #Dataframe za kriticne daljnovode z obremenitvami nad to vrednostjo
+    for i in range(loading_start,loading_stop,loading_inc):
+        above_list.append(i)
+    df_consecutive_above = pd.DataFrame(columns = above_list)
+    df_consecutive_above_start = pd.DataFrame(columns = above_list)
+    #print(above_list)
+    for line in line_list:
+        #print(line)
+        #loading_list =  df_results_line_loading_final.loc[line]
+        for limit in df_consecutive_above.columns:
+            #max_consecutive = 0
+            #hiter nacin brez da dobimo vrednosti kdaj se zacne
+            #consecutive_list = [len(list(g)) for k, g in groupby(loading_list>limit) if k==True]
+            #hiter nacin brez da dobimo vrednosti kdaj se zacne
+            consecutive_nr = 0
+            longest_consecutive = 0
+            consecutive_start = 0
+            longest_consecutive_start = 0
+            for hour in df_results_line_loading_final.columns:
+                if df_results_line_loading_final.at[line,hour] > limit:
+                    if consecutive_nr == 0:
+                        consecutive_start = hour
+                    consecutive_nr += 1
+                else:
+                    if consecutive_nr >= longest_consecutive:
+                        longest_consecutive = consecutive_nr
+                        longest_consecutive_start = consecutive_start
+                    consecutive_nr = 0
+                #Ce je vse ure nad limit vrednostjo zapise to
+                if hour == df_results_line_loading_final.columns[-1]:
+                    longest_consecutive = consecutive_nr
+                    longest_consecutive_start = consecutive_start
+            #hiter nacin brez da dobimo vrednosti kdaj se zacne
+            #if consecutive_list: max_consecutive = max(consecutive_list)
+            #df_consecutive_above.at[line,limit] = max_consecutive
+            #hiter nacin brez da dobimo vrednosti kdaj se zacne
+            df_consecutive_above.at[line,limit] = longest_consecutive
+            df_consecutive_above_start.at[line,limit] = longest_consecutive_start
+        #print(max_consecutive)
+    #print(df_consecutive_above)
+    #print(df_consecutive_above_start)
+    # df_consecutive_above.to_excel(path + r'/Rezultati/Results_consecutive_above.xlsx', sheet_name = 'data')
+    #Poberemo samo krtične elemente z obremenitvami nad neko mejo
+    df_consecutive_above_critical = df_consecutive_above.drop(df_consecutive_above[df_consecutive_above[filter_limit] <= 0].index)
+    df_consecutive_above_start_critical = df_consecutive_above_start[df_consecutive_above_start.index.isin(df_consecutive_above_critical.index)]
+    #print(df_consecutive_above_critical)
+    #print(df_consecutive_above_start_critical)
+    #Potem naredimo se za dan, datum in uro dneva
+    df_consecutive_above_start_date = pd.DataFrame(columns = df_consecutive_above_critical.columns)
+    for line in df_consecutive_above_critical.index:
+        for limit in df_consecutive_above_critical.columns:
+            hour_of_year = int(df_consecutive_above_start_critical.at[line,limit]) 
+            if hour_of_year > 0:
+                month,day,hour = dobiDatumIzUreVLetu(year, hour_of_year)
+                dayofweek = dobiDanVtednu(year, month, day)
+                daydatetime = dayofweek + ", " + str(day) + "." + str(month) + "." + str(year) + ", " + str(hour) + ":00"
+                df_consecutive_above_start_date.at[line,limit] = daydatetime
+            else: 
+                df_consecutive_above_start_date.at[line,limit] = ""
+    #print(df_consecutive_above_start_date)
+    
+    # Naredimo workbook
+    workbook = xlsxwriter.Workbook(os.path.join(f_output_data_directory, "Rezultati.xlsx"))
+    
+    format_header1 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header1.set_align('vcenter')
+    format_header1.set_align('center')
+    format_header1.set_bg_color('#b9faad')
+    format_header1.set_border()
+    
+    format_header2 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header2.set_align('vcenter')
+    format_header2.set_align('center')
+    format_header2.set_bg_color('#fcc5c2')
+    format_header2.set_border()
+    
+    format_header3 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header3.set_align('vcenter')
+    format_header3.set_align('center')
+    format_header3.set_bg_color('#d5fcb8')
+    format_header3.set_border()
+    
+    format_header4 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header4.set_align('vcenter')
+    format_header4.set_align('center')
+    format_header4.set_bg_color('#90bbf8')
+    format_header4.set_border()
+    
+    format_header5 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header5.set_align('vcenter')
+    format_header5.set_align('center')
+    format_header5.set_bg_color('#9cf05a')
+    format_header5.set_border()
+    
+    format_header6 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header6.set_align('vcenter')
+    format_header6.set_align('center')
+    format_header6.set_bg_color('#e6f13b')
+    format_header6.set_border()
+    
+    format_header7 = workbook.add_format({'bold': True,
+                                          'text_wrap': True})
+    format_header7.set_align('vcenter')
+    format_header7.set_align('center')
+    format_header7.set_bg_color('#f3634f')
+    format_header7.set_border()
+    
+    format_data_lighter = workbook.add_format({'text_wrap': True})
+    format_data_lighter.set_align('vcenter')
+    format_data_lighter.set_align('center')
+    format_data_lighter.set_bg_color('#f1f1f1')
+    
+    format_data_darker = workbook.add_format({'text_wrap': True})
+    format_data_darker.set_align('vcenter')
+    format_data_darker.set_align('center')
+    format_data_darker.set_bg_color('#dcdcdc')
+    
+    # Zapisemo sheet 1 dveh najhujsih obremenitev
+    worksheet1 = workbook.add_worksheet('Max obr.')
+    
+    worksheet1.set_row(0, 34)
+    worksheet1_column_width = [20,20,20,17,8,25,17,8,25,17,8,25,11,6,6,6,8,8,20]
+    [ worksheet1.set_column(column, column, worksheet1_column_width[column]) for column in range(len(worksheet1_column_width)) ]
+    worksheet1.write(0, 0, 'Pravo ime', format_header1)
+    worksheet1.write(0, 1, 'Advanced ime', format_header1)
+    worksheet1.write(0, 2, 'Powerfactory ime', format_header1)
+    worksheet1.write(0, 3, 'Prva najhujsa obrem. v obd. [%]', format_header2)
+    worksheet1.write(0, 4, 'Ura v letu', format_header2)
+    worksheet1.write(0, 5, 'Dan v tednu, datum, ura', format_header2)
+    worksheet1.write(0, 6, 'Druga najhujsa obrem. v obd. [%]', format_header3)
+    worksheet1.write(0, 7, 'Ura v letu', format_header3)
+    worksheet1.write(0, 8, 'Dan v tednu, datum, ura', format_header3)
+    worksheet1.write(0, 9, 'Tretja najhujsa obrem. v obd. [%]', format_header4)
+    worksheet1.write(0, 10, 'Ura v letu', format_header4)
+    worksheet1.write(0, 11, 'Dan v tednu, datum, ura', format_header4)
+    worksheet1.write(0, 12, 'Tip elementa', format_header5)
+    worksheet1.write(0, 13, 'Un [kV]', format_header5)
+    worksheet1.write(0, 14, 'In [A]', format_header5)
+    worksheet1.write(0, 15, 'Pn [MW]', format_header5)
+    worksheet1.write(0, 16, 'Grid', format_header5)
+    worksheet1.write(0, 17, 'Area', format_header5)
+    worksheet1.write(0, 18, 'Zone', format_header5)
+    
+    
+    #Zapis headerja sheet 2 - obremenitve nad xx%
+    worksheet2 = workbook.add_worksheet('Obr nad %')
+    worksheet2.set_row(0, 34)
+    worksheet2_column_width = [20,20,20,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,11,6,6,6,8,8,20]
+    [ worksheet2.set_column(column, column, worksheet2_column_width[column]) for column in range(len(worksheet2_column_width)) ]
+    worksheet2.write(0, 0, 'Pravo ime', format_header1)
+    worksheet2.write(0, 1, 'Advanced ime', format_header1)
+    worksheet2.write(0, 2, 'Powerfactory ime', format_header1)
+    [ worksheet2.write(0, i + 3, 'St. ur nad ' + str(i*10) + ' % obr.', format_header2) for i in range(0,16) ]
+    #Zapisovanje naslovov stolpcev
+    # for percent10 in range(0,16):
+    #     column_name = 'Nad ' + str(percent10*10) + '% [h]'
+    #     column_number = percent10 + 3
+    #     if percent10 < 7:
+    #         #Za procente pod 7 pustimo obarvan zeleno
+    #         worksheet2.write(0, column_number, column_name, format_header5)
+        
+    #     if percent10 >= 7 and percent10 < 10:
+    #         #Za procente med 7 in 10 obarvan rumeno
+    #         worksheet2.write(0, column_number, column_name, format_header6)
+        
+    #     if percent10 >= 10:
+    #         #Za procente nad 10 pobarvamo header rdece
+    #         worksheet2.write(0, column_number, column_name, format_header7)
+    worksheet2.write(0, 19, 'Tip elementa', format_header4)
+    worksheet2.write(0, 20, 'Un [kV]', format_header4)
+    worksheet2.write(0, 21, 'In [A]', format_header4)
+    worksheet2.write(0, 22, 'Pn [MW]', format_header4)
+    worksheet2.write(0, 23, 'Grid', format_header4)
+    worksheet2.write(0, 24, 'Area', format_header4)
+    worksheet2.write(0, 25, 'Zone', format_header4)
+    
+    worksheet3 = workbook.add_worksheet('Obr zaporedno')
+    worksheet3.set_row(0, 34)
+    worksheet3_column_width = [20,20,20,12,8,25,12,8,25,12,8,25,11,6,6,6,8,8,20]
+    [ worksheet3.set_column(column, column, worksheet3_column_width[column]) for column in range(len(worksheet3_column_width)) ]
+    worksheet3.write(0, 0, 'Pravo ime', format_header1)
+    worksheet3.write(0, 1, 'Advanced ime', format_header1)
+    worksheet3.write(0, 2, 'Powerfactory ime', format_header1)
+    [ worksheet3.write(0, i*3+3, 'Zap. ur nad ' + str(60+i*20) + '% obr.', format_header2) for i in range(0,3) ]
+    [ worksheet3.write(0, i*3+4, 'Ura v letu', format_header2) for i in range(0,3) ]
+    [ worksheet3.write(0, i*3+5, 'Dan v tednu, datum, ura', format_header2) for i in range(0,3) ]
+    #Zapisovanje naslovov stolpcev
+    # for percent10 in range(0,16):
+    #     column_name = 'Nad ' + str(percent10*10) + '% [h]'
+    #     column_number = percent10 + 3
+    #     if percent10 < 7:
+    #         #Za procente pod 7 pustimo obarvan zeleno
+    #         worksheet3.write(0, column_number, column_name, format_header5)
+        
+    #     if percent10 >= 7 and percent10 < 10:
+    #         #Za procente med 7 in 10 obarvan rumeno
+    #         worksheet3.write(0, column_number, column_name, format_header6)
+        
+    #     if percent10 >= 10:
+    #         #Za procente nad 10 pobarvamo header rdece
+    #         worksheet3.write(0, column_number, column_name, format_header7)
+    worksheet3.write(0, 12, 'Tip elementa', format_header4)
+    worksheet3.write(0, 13, 'Un [kV]', format_header4)
+    worksheet3.write(0, 14, 'In [A]', format_header4)
+    worksheet3.write(0, 15, 'Pn [MW]', format_header4)
+    worksheet3.write(0, 16, 'Grid', format_header4)
+    worksheet3.write(0, 17, 'Area', format_header4)
+    worksheet3.write(0, 18, 'Zone', format_header4)
+    
+    #Zapis sheeta 4 - napetosti max
+    
+    worksheet4 = workbook.add_worksheet('Napetosti Max')
+    worksheet4.set_row(0, 34)
+    worksheet4_column_width = [20,20,20,15,7,25,15,7,25,15,7,25,11,6,8,8,20]
+    [ worksheet4.set_column(column, column, worksheet4_column_width[column]) for column in range(len(worksheet4_column_width)) ]
+    worksheet4.write(0, 0, 'Pravo ime', format_header1)
+    worksheet4.write(0, 1, 'Advanced ime', format_header1)
+    worksheet4.write(0, 2, 'Powerfactory ime', format_header1)
+    worksheet4.write(0, 3, 'Prva najvišja nap. v obd. [kV]', format_header2)
+    worksheet4.write(0, 4, 'Ura v letu', format_header2)
+    worksheet4.write(0, 5, 'Dan v tednu, datum, ura', format_header2)
+    worksheet4.write(0, 6, 'Druga najvišja nap. v obd. [kV]', format_header3)
+    worksheet4.write(0, 7, 'Ura v letu', format_header3)
+    worksheet4.write(0, 8, 'Dan v tednu, datum, ura', format_header3)
+    worksheet4.write(0, 9, 'Druga najvišja nap. v obd. [kV]', format_header4)
+    worksheet4.write(0, 10, 'Ura v letu', format_header4)
+    worksheet4.write(0, 11, 'Dan v tednu, datum, ura', format_header4)
+    worksheet4.write(0, 12, 'Tip elementa', format_header4)
+    worksheet4.write(0, 13, 'Un [kV]', format_header4)
+    worksheet4.write(0, 14, 'Grid', format_header4)
+    worksheet4.write(0, 15, 'Area', format_header4)
+    worksheet4.write(0, 16, 'Zone', format_header4)
+    
+    #Zapis sheeta 4 - napetostimaxcasovno
+    
+    worksheet5 = workbook.add_worksheet('Nap. Max Cas')
+    worksheet5.set_row(0, 34)
+    worksheet5_column_width = [20,20,20,10,10,10,10,10,10,10,10,10,10,10,10,10,10,11,6,8,8,20]
+    [ worksheet5.set_column(column, column, worksheet5_column_width[column]) for column in range(len(worksheet5_column_width)) ]
+    worksheet5.write(0, 0, 'Pravo ime', format_header1)
+    worksheet5.write(0, 1, 'Advanced ime', format_header1)
+    worksheet5.write(0, 2, 'Powerfactory ime', format_header1)
+    #Zapisovanje naslovov stolpcev
+    #Ostopanje do 2% je z zeleno, odstopanje do 4% z rumeno, nad 4% z rdečo.
+    [ worksheet5.write(0, i + 3, 'St. ur nad ' + str(round(float(1 + i * 0.01),2)) + ' p.u.', format_header2) for i in range(0,14) ]
+    worksheet5.write(0, 15, 'Tip elementa', format_header4)
+    worksheet5.write(0, 16, 'Un', format_header4)
+    worksheet5.write(0, 17, 'Grid', format_header4)
+    worksheet5.write(0, 18, 'Area', format_header4)
+    worksheet5.write(0, 19, 'Zone', format_header4)
+    
+    #Zapis sheeta 5
+    
+    worksheet6 = workbook.add_worksheet('Napetosti Min')
+    worksheet6.set_row(0, 34)
+    worksheet6_column_width = [20,20,20,15,7,25,15,7,25,15,7,25,11,6,8,8,20]
+    [ worksheet6.set_column(column, column, worksheet6_column_width[column]) for column in range(len(worksheet6_column_width)) ]
+    worksheet6.write(0, 0, 'Pravo ime', format_header1)
+    worksheet6.write(0, 1, 'Advanced ime', format_header1)
+    worksheet6.write(0, 2, 'Powerfactory ime', format_header1)
+    worksheet6.write(0, 3, 'Prva najnizja nap. v obd. [kV]', format_header2)
+    worksheet6.write(0, 4, 'Ura v letu', format_header2)
+    worksheet6.write(0, 5, 'Dan v tednu, datum, ura', format_header2)
+    worksheet6.write(0, 6, 'Druga najnizja nap. v obd. [kV]', format_header3)
+    worksheet6.write(0, 7, 'Ura v letu', format_header3)
+    worksheet6.write(0, 8, 'Dan v tednu, datum, ura', format_header3)
+    worksheet6.write(0, 9, 'Druga najnizja nap. v obd. [kV]', format_header4)
+    worksheet6.write(0, 10, 'Ura v letu', format_header4)
+    worksheet6.write(0, 11, 'Dan v tednu, datum, ura', format_header4)
+    worksheet6.write(0, 12, 'Tip elementa', format_header4)
+    worksheet6.write(0, 13, 'Un [kV]', format_header4)
+    worksheet6.write(0, 14, 'Grid', format_header4)
+    worksheet6.write(0, 15, 'Area', format_header4)
+    worksheet6.write(0, 16, 'Zone', format_header4)
+    
+    #Zapis sheeta 6
+    
+    worksheet7 = workbook.add_worksheet('Nap Min Cas')
+    worksheet7.set_row(0, 34)
+    worksheet7_column_width = [20,20,20,10,10,10,10,10,10,10,10,10,10,10,10,10,10,11,6,8,8,20]
+    [ worksheet7.set_column(column, column, worksheet7_column_width[column]) for column in range(len(worksheet7_column_width)) ]
+    worksheet7.write(0, 0, 'Pravo ime', format_header1)
+    worksheet7.write(0, 1, 'Advanced ime', format_header1)
+    worksheet7.write(0, 2, 'Powerfactory ime', format_header1)
+    [ worksheet7.write(0, i + 3, 'St. ur pod ' + str(round(float(1 - i * 0.01),2)) + ' p.u.', format_header2) for i in range(0,14) ]
+    worksheet7.write(0, 17, 'Tip elementa', format_header4)
+    worksheet7.write(0, 18, 'Un', format_header4)
+    worksheet7.write(0, 19, 'Grid', format_header4)
+    worksheet7.write(0, 20, 'Area', format_header4)
+    worksheet7.write(0, 21, 'Zone', format_header4)
+    
+    # Sheet 7 podatkih generatorjev po urah
+    
+    worksheet8 = workbook.add_worksheet('Gen PQ')
+    
+    worksheet8.set_row(0, 34)
+    worksheet8_column_width = [20,20,20]
+    [ worksheet8.set_column(column, column, worksheet8_column_width[column]) for column in range(len(worksheet8_column_width)) ]
+    worksheet8.merge_range(0, 0, 1, 0, 'Pravo ime', format_header1)
+    worksheet8.merge_range(0, 1, 1, 1, 'Advanced ime', format_header1)
+    worksheet8.merge_range(0, 2, 1, 2, 'Powerfactory ime', format_header1)
+    
+    j=1
+    for i in hours:
+        # Hocemo v formatu Ura 1, Torek, 1.1.2030
+        month, day, hour = dobiDatumIzUreVLetu(year, i)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet8.merge_range(0, 3+2*j, 0, 4+2*j, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
+        #worksheet8.write(0,3+2*i, 'Ura ' + str(hours[i]) + ', ' + str(dayofweek) + str(day) + '.' + str(month) + '.' + str(year), format_header1)
+        worksheet8.write(1, 3+2*j, 'P [MW]', format_header1)
+        worksheet8.write(1, 4+2*j, 'Q [Mvar]', format_header1)
+        j+=1
+    
+    #Zapis sheeta 10 - nastavljene P in Q generatorjev v določenih gridih
+    worksheet9 = workbook.add_worksheet('Load PQ')
+    
+    worksheet9.set_row(0, 34)
+    worksheet9_column_width = [20,20,20]
+    [ worksheet9.set_column(column, column, worksheet9_column_width[column]) for column in range(len(worksheet9_column_width)) ]
+    worksheet9.merge_range(0, 0, 1, 0, 'Pravo ime', format_header1)
+    worksheet9.merge_range(0, 1, 1, 1, 'Advanced ime', format_header1)
+    worksheet9.merge_range(0, 2, 1, 2, 'Powerfactory ime', format_header1)
+    
+    j=1
+    for i in hours:
+        # Hocemo v formatu Ura 1, Torek, 1.1.2030
+        month, day, hour = dobiDatumIzUreVLetu(year, i)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet9.merge_range(0, 3+2*j, 0, 4+2*j, 'Ura ' + str(i) + ', ' + str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', format_header1)
+        #worksheet9.write(0,3+2*i, 'Ura ' + str(hours[i]) + ', ' + str(dayofweek) + str(day) + '.' + str(month) + '.' + str(year), format_header1)
+        worksheet9.write(1, 3+2*j, 'P [MW]', format_header1)
+        worksheet9.write(1, 4+2*j, 'Q [Mvar]', format_header1)
+        j+=1
+    
+    #Zapis sheeta 9 - porocilo kateri izracuni so konvergirali
+    
+    worksheet10 = workbook.add_worksheet('Porocilo')
+    worksheet10.set_row(0, 34)
+    worksheet10_column_width = [15,20,20]
+    [ worksheet10.set_column(column, column, worksheet10_column_width[column]) for column in range(len(worksheet10_column_width)) ]
+    #Beri datoteko nekonvergence.xlsx in potem zapisi z malo lepsim formatiranjem v to datoteko
+    #data_konvergence = os.getcwd()  + r'/Rezultati/Raw data voltage.xlsx'
+    #df_results_loading_hour.to_excel(data_konvergence, sheet_name = 'DATA', index_col=0)
+    worksheet10.write(0, 0, 'Ura v letu', format_header1)
+    worksheet10.write(0, 1, 'Konvergenca?', format_header1)
+    worksheet10.write(0, 2, 'Potreben cas [s]', format_header1)
+    
+    t3 = time.time()
+    dt2 = t3 - t2
+    print("Narejena excel osnova, cas: " + str(dt2))
+    print("Zacetek pisanja vrednost za daljnovode/transformatorje v excel datoteke...")
+    
+    current_row = 1
+    for line in results_element_list_lines:
+        #Pisemo samo za daljnovode z razultati
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        worksheet1.set_row(current_row, 18)
+        #Osnovni podatki za worksheet 1
+        worksheet1.write(current_row, 0, "", row_format)
+        worksheet1.write(current_row, 1, "", row_format)
+        worksheet1.write(current_row, 2, line, row_format)
+        
+        max_no1_hour = max_no1.at[line, 'max_no1_loading']
+        try: worksheet1.write(current_row, 3, df_results_line_loading_final.at[line, max_no1_hour], row_format)
+        except: worksheet1.write(current_row, 3, 0, row_format)
+        worksheet1.write(current_row, 4, int(max_no1_hour), row_format)
+        yearhour = int(max_no1_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 5, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        max_no2_hour = max_no1.at[line, 'max_no2_loading']
+        try: worksheet1.write(current_row, 6, df_results_line_loading_final.at[line, max_no2_hour], row_format)
+        except: worksheet1.write(current_row, 6, 0, row_format)
+        worksheet1.write(current_row, 7, int(max_no2_hour), row_format)
+        yearhour = int(max_no2_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 8, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        max_no3_hour = max_no1.at[line, 'max_no3_loading']
+        try: worksheet1.write(current_row, 9, df_results_line_loading_final.at[line, max_no3_hour], row_format)
+        except: worksheet1.write(current_row, 9, 0, row_format)
+        worksheet1.write(current_row, 10, int(max_no3_hour), row_format)
+        yearhour = int(max_no3_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 11, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        worksheet1.write(current_row, 12, 'Daljnovod', row_format)
+        worksheet1.write(current_row, 13, df_line_info.at[line, 'rated_voltage'], row_format)
+        worksheet1.write(current_row, 14, df_line_info.at[line, 'rated_current'], row_format)
+        worksheet1.write(current_row, 15, df_line_info.at[line, 'rated_power'], row_format)
+        worksheet1.write(current_row, 16, df_line_info.at[line, 'grid'], row_format)
+        worksheet1.write(current_row, 17, df_line_info.at[line, 'area'], row_format)
+        worksheet1.write(current_row, 18, df_line_info.at[line, 'zone'], row_format)
+        
+        #Worksheet 2 z rezultati za % obremenitve in ure
+        worksheet2.set_row(current_row, 18)
+        worksheet2.write(current_row, 0, "", row_format)
+        worksheet2.write(current_row, 1, "", row_format)
+        worksheet2.write(current_row, 2, line, row_format)
+        for i in range(0,16):
+            dataframe_name = 'nad' + str(i*10)
+            column_number = i + 3
+            worksheet2.write(current_row, column_number, percent_loading_lines.at[line, dataframe_name], row_format)
+        worksheet2.write(current_row, 19, 'Daljnovod', row_format)
+        worksheet2.write(current_row, 20, df_line_info.at[line, 'rated_voltage'], row_format)
+        worksheet2.write(current_row, 21, df_line_info.at[line, 'rated_current'], row_format)
+        worksheet2.write(current_row, 22, df_line_info.at[line, 'rated_power'], row_format)
+        worksheet2.write(current_row, 23, df_line_info.at[line, 'grid'], row_format)
+        worksheet2.write(current_row, 24, df_line_info.at[line, 'area'], row_format)
+        worksheet2.write(current_row, 25, df_line_info.at[line, 'zone'], row_format)
+        current_row += 1
+    
+    current_row += 1
+    
+    for transformer in results_element_list_transformers:
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        worksheet1.set_row(current_row, 18)
+        worksheet1.write(current_row, 0, "", row_format)
+        worksheet1.write(current_row, 1, "", row_format)
+        worksheet1.write(current_row, 2, transformer, row_format)
+        max_no1_hour = max_no2.at[transformer, 'max_no1_loading']
+        try: worksheet1.write(current_row, 3, df_results_transformer_loading_final.at[transformer, max_no1_hour], row_format)
+        except: worksheet1.write(current_row, 3, 0, row_format)
+        worksheet1.write(current_row, 4, int(max_no1_hour), row_format)
+        yearhour = int(max_no1_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 5, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        max_no2_hour = max_no2.at[transformer, 'max_no2_loading']
+        try: worksheet1.write(current_row, 6, df_results_transformer_loading_final.at[transformer, max_no2_hour], row_format)
+        except: worksheet1.write(current_row, 6, 0, row_format)
+        worksheet1.write(current_row, 7, int(max_no2_hour), row_format)
+        yearhour = int(max_no2_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 8, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        max_no3_hour = max_no2.at[transformer, 'max_no3_loading']
+        try: worksheet1.write(current_row, 9, df_results_transformer_loading_final.at[transformer, max_no3_hour], row_format)
+        except: worksheet1.write(current_row, 9, 0, row_format)
+        worksheet1.write(current_row, 10, int(max_no3_hour), row_format)
+        yearhour = int(max_no3_hour) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet1.write(current_row, 11, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        worksheet1.write(current_row, 12, 'Transformator', row_format)
+        worksheet1.write(current_row, 13, "/", row_format)
+        worksheet1.write(current_row, 14, "/", row_format)
+        worksheet1.write(current_row, 15, "/", row_format)
+        worksheet1.write(current_row, 16, df_transformer_info.at[transformer, 'grid'], row_format)
+        worksheet1.write(current_row, 17, df_transformer_info.at[transformer, 'area'], row_format)
+        worksheet1.write(current_row, 18, df_transformer_info.at[transformer, 'zone'], row_format)
+        
+        worksheet2.set_row(current_row, 18)
+        worksheet2.write(current_row, 0, "", row_format)
+        worksheet2.write(current_row, 1, "", row_format)
+        worksheet2.write(current_row, 2, transformer, row_format)
+        #Worksheet 2 z rezultati za % obremenitve in ure
+        for i in range(0,16):
+            dataframe_name = 'nad' + str(i*10)
+            column_number = i + 3
+            #worksheet2.write(current_row, column_number, percentload.at[transformer_name, dataframe_name])
+            worksheet2.write(current_row, column_number, percent_loading_transformers.at[transformer, dataframe_name], row_format)
+            #worksheet2.write(current_row, 24, line_rated_voltage)
+            #worksheet2.write(current_row, 25, line_rated_current)
+            #worksheet2.write(current_row, 26, line_rated_power)
+        worksheet2.write(current_row, 19, 'Transformator', row_format)
+        worksheet2.write(current_row, 20, "/", row_format)
+        worksheet2.write(current_row, 21, "/", row_format)
+        worksheet2.write(current_row, 22, "/", row_format)
+        worksheet2.write(current_row, 23, df_transformer_info.at[transformer, 'grid'], row_format)
+        worksheet2.write(current_row, 24, df_transformer_info.at[transformer, 'area'], row_format)
+        worksheet2.write(current_row, 25, df_transformer_info.at[transformer, 'zone'], row_format)
+        current_row += 1
+    
+    current_row = 1
+    for line in results_element_list_lines:
+        #Pisemo samo za daljnovode z razultati
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        
+        if line in df_consecutive_above_critical.index:
+            for i in range(0,3):
+                #Worksheet 3 z rezultati za % obremenitve in ure
+                worksheet3.set_row(current_row, 18)
+                worksheet3.write(current_row, 0, "", row_format)
+                worksheet3.write(current_row, 1, "", row_format)
+                worksheet3.write(current_row, 2, line, row_format)
+                loading_value = 60+i*20
+                consecituve_above_critical = df_consecutive_above_critical.at[line, loading_value]
+                worksheet3.write(current_row, i*3+3, consecituve_above_critical, row_format)
+                loading_hour = df_consecutive_above_start_critical.at[line, loading_value]
+                if consecituve_above_critical > 0:
+                    worksheet3.write(current_row, i*3+4, loading_hour, row_format)
+                    yearhour = int(loading_hour) + 1
+                    month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+                    dayofweek = dobiDanVtednu(year, month, day)
+                    worksheet3.write(current_row, i*3+5, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+                else: 
+                    worksheet3.write(current_row, i*3+4, '', row_format)
+                    worksheet3.write(current_row, i*3+5, '', row_format)
+                    
+                worksheet3.write(current_row, 12, 'Daljnovod', row_format)
+                # worksheet3.write(current_row, 13, df_line_info.at[line, 'rated_voltage'], row_format)
+                # worksheet3.write(current_row, 14, df_line_info.at[line, 'rated_current'], row_format)
+                # worksheet3.write(current_row, 15, df_line_info.at[line, 'rated_power'], row_format)
+                # worksheet3.write(current_row, 16, df_line_info.at[line, 'grid'], row_format)
+                # worksheet3.write(current_row, 17, df_line_info.at[line, 'area'], row_format)
+                # worksheet3.write(current_row, 18, df_line_info.at[line, 'zone'], row_format)
+            current_row += 1
+        
+    
+    t4 = time.time()
+    dt3 = t4 - t3
+    print("Izpisane vrednosti daljnovodov/transformatorjev v excel, cas: " + str(dt3))
+    
+    current_row = 1
+    #Izpis za zbiralke (max in min napetosti)
+    #for terminal in terminals:
+    #for terminal in results_hourly_elementlist_voltage:
+    print("Zacetek pisanja rezultatov napetosti zbiralk v excel...")
+    for terminal in results_element_list_terminals:
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        worksheet4.set_row(current_row, 18)
+        terminal_rated_voltage = 0
+        terminal_grid = df_terminal_info.at[terminal, 'grid']
+        terminal_area = df_terminal_info.at[terminal, 'area']
+        terminal_zone = df_terminal_info.at[terminal, 'zone']
+            #Osnovni podatki za worksheet 3
+        worksheet4.write(current_row, 0, "", row_format)
+        worksheet4.write(current_row, 1, "", row_format)
+        worksheet4.write(current_row, 2, terminal, row_format)
+        
+        # Za dobit column z max vrednostjo https://www.skytowner.com/explore/getting_column_label_of_max_value_in_each_row_in_pandas_datafrme
+        max_no1_volt = max_no3.at[terminal, 'max_no1_voltage']
+        #print(max_no1_hour)
+        try: worksheet4.write(current_row, 3, round((df_results_terminal_voltage_final.at[terminal, max_no1_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet4.write(current_row, 3, 0, row_format)
+        worksheet4.write(current_row, 4, int(max_no1_volt), row_format)
+        yearhour = int(max_no1_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet4.write(current_row, 5, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+            
+        max_no2_volt = max_no3.at[terminal, 'max_no2_voltage']
+        try: worksheet4.write(current_row, 6, round((df_results_terminal_voltage_final.at[terminal, max_no2_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet4.write(current_row, 6, 0, row_format)
+        worksheet4.write(current_row, 7, int(max_no2_volt), row_format)
+        yearhour = int(max_no2_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet4.write(current_row, 8, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        max_no3_volt = max_no3.at[terminal, 'max_no3_voltage']
+        try: worksheet4.write(current_row, 9, round((df_results_terminal_voltage_final.at[terminal, max_no3_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet4.write(current_row, 9, 0, row_format)
+        worksheet4.write(current_row, 10, int(max_no3_volt), row_format)
+        yearhour = int(max_no3_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet4.write(current_row, 11, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        worksheet4.write(current_row, 12, "Zbiralka", row_format)
+        worksheet4.write(current_row, 13, terminal_rated_voltage, row_format)
+        worksheet4.write(current_row, 14, df_terminal_info.at[terminal, 'grid'], row_format)
+        worksheet4.write(current_row, 15, df_terminal_info.at[terminal, 'area'], row_format)
+        worksheet4.write(current_row, 16, df_terminal_info.at[terminal, 'zone'], row_format)
+        
+        #Worksheet 2 z rezultati za % obremenitve in ure
+        worksheet5.set_row(current_row, 18)
+        worksheet5.write(current_row, 0, "", row_format)
+        worksheet5.write(current_row, 1, "", row_format)
+        worksheet5.write(current_row, 2, terminal, row_format)
+        for i in range(0,12):
+            overvoltagepercent = i * 0.01
+            endvoltage = float(1 + overvoltagepercent)
+            dataframe_name = 'nad' + str(endvoltage)
+            column_number = i + 3
+            worksheet5.write(current_row, column_number, voltage_high_terminals.at[terminal, dataframe_name], row_format)
+        worksheet5.write(current_row, 15, "Zbiralka", row_format)
+        worksheet5.write(current_row, 16, terminal_rated_voltage, row_format)
+        worksheet5.write(current_row, 17, df_terminal_info.at[terminal, 'grid'], row_format)
+        worksheet5.write(current_row, 28, df_terminal_info.at[terminal, 'area'], row_format)
+        worksheet5.write(current_row, 29, df_terminal_info.at[terminal, 'zone'], row_format)
+        
+        #Osnovni podatki za worksheet 1
+        worksheet6.set_row(current_row, 18)
+        worksheet6.write(current_row, 0, "", row_format)
+        worksheet6.write(current_row, 1, "", row_format)
+        worksheet6.write(current_row, 2, terminal, row_format)
+        min_no1_volt = max_no3.at[terminal, 'min_no1_voltage']
+        #print(max_no1_hour)
+        try: worksheet6.write(current_row, 3, round((df_results_terminal_voltage_final.at[terminal, min_no1_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet6.write(current_row, 3, 0, row_format)
+        worksheet6.write(current_row, 4, int(min_no1_volt), row_format)
+        yearhour = int(min_no1_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet6.write(current_row, 5, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+            
+        # Za dobit column z max vrednostjo https://www.skytowner.com/explore/getting_column_label_of_max_value_in_each_row_in_pandas_datafrme
+        min_no2_volt = max_no3.at[terminal, 'min_no2_voltage']
+        try: worksheet6.write(current_row, 6, round((df_results_terminal_voltage_final.at[terminal, min_no2_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet6.write(current_row, 6, 0, row_format)
+        worksheet6.write(current_row, 7, int(min_no2_volt), row_format)
+        yearhour = int(min_no2_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet6.write(current_row, 8, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        
+        min_no3_volt = max_no3.at[terminal, 'min_no3_voltage']
+        try: worksheet6.write(current_row, 9, round((df_results_terminal_voltage_final.at[terminal, min_no3_volt] * terminal_rated_voltage), 1), row_format)
+        except: worksheet6.write(current_row, 9, 0, row_format)
+        worksheet6.write(current_row, 10, int(min_no3_volt), row_format)
+        yearhour = int(min_no3_volt) + 1
+        month, day, hour = dobiDatumIzUreVLetu(year, yearhour)
+        dayofweek = dobiDanVtednu(year, month, day)
+        worksheet6.write(current_row, 11, str(dayofweek) + ', ' + str(day) + '.' + str(month) + '.' + str(year) + ', ' + str(hour) + ':00', row_format)
+        worksheet6.write(current_row, 12, "Zbiralka", row_format)
+        worksheet6.write(current_row, 13, terminal_rated_voltage, row_format)
+        worksheet6.write(current_row, 14, terminal_grid, row_format)
+        worksheet6.write(current_row, 15, terminal_area, row_format)
+        worksheet6.write(current_row, 16, terminal_zone, row_format)
+        
+        worksheet7.set_row(current_row, 18)
+        worksheet7.write(current_row, 0, "", row_format)
+        worksheet7.write(current_row, 1, "", row_format)
+        worksheet7.write(current_row, 2, terminal, row_format)
+        for i in range(0,14):
+            undervoltagepercent = i * 0.01
+            endvoltage = float(1 - undervoltagepercent)
+            dataframe_name = 'pod' + str(endvoltage)
+            column_number = i + 3
+            worksheet7.write(current_row, column_number, voltage_low_terminals.at[terminal, dataframe_name], row_format)
+        worksheet7.write(current_row, 17, "Zbiralka", row_format)
+        worksheet7.write(current_row, 18, terminal_rated_voltage, row_format)
+        worksheet7.write(current_row, 19, terminal_grid, row_format)
+        worksheet7.write(current_row, 20, terminal_area, row_format)
+        worksheet7.write(current_row, 21, terminal_zone, row_format)
+        
+        current_row += 1
+            
+    t5 = time.time()
+    dt4 = t5 - t4
+    print("Izpisane vrednosti zbiralk v excel, cas: " + str(dt4))
+    ################################OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+    current_row = 2
+    
+            #Izpis za generatorje, delovne in jalove nastavljene moči
+    print("Zacetek pisanaja dodeljenih moci generatorjev v excel...")
+    for generator in results_element_list_generators:
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        worksheet8.set_row(current_row, 18)
+        worksheet8.write(current_row, 0, "", row_format)
+        worksheet8.write(current_row, 1, "", row_format)
+        worksheet8.write(current_row, 2, generator, row_format)
+        for i in hours:
+            try:
+                worksheet8.write(current_row, 3+2*i, round(df_results_generator_P_set_final.at[generator, str(hours[i])], 2), row_format)
+                worksheet8.write(current_row, 4+2*i, round(df_results_generator_Q_set_final.at[generator, str(hours[i])], 2), row_format)
+                # print("Zapisal")
+            except:
+                worksheet8.write(current_row, 3+2*i, round(0, 2), row_format)
+                worksheet8.write(current_row, 4+2*i, round(0, 2), row_format)
+                # print("Ni slo...")
+                
+        current_row += 1
+            
+    # Zapisemo delovne in jalove moči po urah za bremena
+            
+    print("Konc pisanja vrednosti generatorjev")
+    print("Zacetek pisanja nastavljenih vrednosti P in Q generatorjev pu urah")
+    current_row = 2
+    for load in results_element_list_loads:
+        if (current_row % 2) == 0: row_format = format_data_lighter
+        else: row_format = format_data_darker
+        worksheet9.set_row(current_row, 18)
+        worksheet9.write(current_row, 0, "", row_format)
+        worksheet9.write(current_row, 1, "", row_format)
+        worksheet9.write(current_row, 2, load, row_format)
+        for i in hours:
+            try:
+                worksheet9.write(current_row, 3+2*i, round(df_results_load_P_set_final.at[load, str(hours[i])], 2), row_format)
+                worksheet9.write(current_row, 4+2*i, round(df_results_load_Q_set_final.at[load, str(hours[i])], 2), row_format)
+            except:
+                worksheet9.write(current_row, 3+2*i, round(0, 2), row_format)
+                worksheet9.write(current_row, 4+2*i, round(0, 2), row_format)
+        current_row += 1
+            
+    print("Konec pisanja vrednosti generatorjev po urah")
+    print("Izpisovanje statusov in casa izracunov")
+    
+    # # Izpisemo rezultate loadflov kalkulacij na sheet 9
+    # current_row = 1
+    # for hour in df_results_calculation_status_joined.index:
+    #     if (current_row % 2) == 0:
+    #         row_format = format_data_lighter
+    #     else:
+    #         row_format = format_data_darker
+    #     worksheet10.set_row(current_row, 18)
+    #     worksheet10.write(current_row, 0, hour, row_format)
+    #     convergence_status = df_results_calculation_status_joined.at[hour,'convergence']
+    #     if convergence_status == 0:
+    #         worksheet10.write(current_row, 1, 'DA', row_format)
+    #     else:
+    #         worksheet10.write(current_row, 1, 'NE', row_format)
+    #     worksheet10.write(current_row, 2, df_results_calculation_status_joined.at[hour,'calculation_time'], row_format)
+    #     current_row += 1
+    #     # df_results_calcstatus.at[hour,'convergence'] = int(status)
+    #     # df_results_calcstatus.at[hour,'calculation_time'] = int(t_calc)
+    print("Izpisovanje datoteke z rezultati končano")
+    workbook.close()
+
+################################################################ GLAVNI ALGORITEM PROGRAMA ###############################################################
+
+df_results_convergence = pd.DataFrame(data=None)
+df_results_line_loading_hourly = pd.DataFrame(data=None)
+df_results_transformer_loading_hourly = pd.DataFrame(data=None)
+df_results_voltage_hourly = pd.DataFrame(data=None)
+df_results_generator_P_set = pd.DataFrame(data=None)
+df_results_generator_Q_set = pd.DataFrame(data=None)
+df_results_load_P_set = pd.DataFrame(data=None)
+df_results_load_Q_set = pd.DataFrame(data=None)
+
+saveElementData()
+
+for hour in hours:
+    t_start = time.time()
+    setNodes(hour)
+    t_setting = time.time()
+    app.PrintPlain(f"Time needed for setting for hour {hour} data: {t_setting - t_start} seconds")
+    result = ldf.Execute()
+    t_calc = time.time()
+    app.PrintPlain(f"Time needed for calculation for hour {hour} data: {t_calc - t_setting} seconds")
+    if result == 0:
+        df_results_convergence.at[hour,"Konvergenca"] = "DA"
+        df_results_convergence.at[hour,"Cas"] = t_calc-t_start
+        resultExport(hour)
+        t_export = time.time()
+        app.PrintPlain(f"Time needed for resultss for hour {hour} data: {t_export - t_calc} seconds")
+        app.PrintPlain(f"Total time for hour {hour} data: {t_export - t_start} seconds")
+        if contingency_report: contingencyCalcReport(hour)
+    else:
+        df_results_convergence.at[hour,"Konvergenca"] = "NE"
+        df_results_convergence.at[hour,"Cas"] = t_calc-t_start
+    app.PrintPlain(f"Total time for hour {hour} data: {t_calc - t_start} seconds")
+
+app.PrintPlain("Shranjevanje csv datotek rezultatov")
+
+line_loading_file_path = os.path.join(f_output_data_directory,("Line_loading.csv"))
+transformer_loading_file_path = os.path.join(f_output_data_directory,("Transformer_loading.csv"))
+voltage_file_path = os.path.join(f_output_data_directory,("Terminal_voltage.csv"))
+generator_P_set_file_path = os.path.join(f_output_data_directory,("Generator_P.csv"))
+generator_Q_set_file_path = os.path.join(f_output_data_directory,("Generator_Q.csv"))
+load_P_set_file_path = os.path.join(f_output_data_directory,("Load_P.csv"))
+load_Q_set_file_path = os.path.join(f_output_data_directory,("Load_Q.csv"))
+
+df_results_line_loading_hourly.to_csv(line_loading_file_path, encoding='utf-8', index=True)
+df_results_transformer_loading_hourly.to_csv(transformer_loading_file_path, encoding='utf-8', index=True)
+df_results_voltage_hourly.to_csv(voltage_file_path, encoding='utf-8', index=True)
+df_results_generator_P_set.to_csv(generator_P_set_file_path, encoding='utf-8', index=True)
+df_results_generator_Q_set.to_csv(generator_Q_set_file_path, encoding='utf-8', index=True)
+df_results_load_P_set.to_csv(load_P_set_file_path, encoding='utf-8', index=True)
+df_results_load_Q_set.to_csv(load_Q_set_file_path, encoding='utf-8', index=True)
+
+app.PrintPlain("CSV shranjen")
+app.PrintPlain("Shranjevanje excel datotek rezultatov")
+
+line_loading_file_path = os.path.join(f_output_data_directory,("Line_loading.xlsx"))
+transformer_loading_file_path = os.path.join(f_output_data_directory,("Transformer_loading.xlsx"))
+voltage_file_path = os.path.join(f_output_data_directory,("Terminal_voltage.xlsx"))
+generator_P_set_file_path = os.path.join(f_output_data_directory,("Generator_P.xlsx"))
+generator_Q_set_file_path = os.path.join(f_output_data_directory,("Generator_Q.xlsx"))
+load_P_set_file_path = os.path.join(f_output_data_directory,("Load_P.xlsx"))
+load_Q_set_file_path = os.path.join(f_output_data_directory,("Load_Q.xlsx"))
+
+df_results_line_loading_hourly.to_excel(line_loading_file_path)
+df_results_transformer_loading_hourly.to_excel(transformer_loading_file_path)
+df_results_voltage_hourly.to_excel(voltage_file_path)
+df_results_generator_P_set.to_excel(generator_P_set_file_path)
+df_results_generator_Q_set.to_excel(generator_Q_set_file_path)
+df_results_load_P_set.to_excel(load_P_set_file_path)
+df_results_load_Q_set.to_excel(load_Q_set_file_path)    
+    
+app.PrintPlain("Excel shranjen")
+
+if izdelava_porocila:
+    app.PrintPlain("Izdelava koncnega porocila...")
+    IzdelajPorocilo()
+    app.PrintPlain("Koncno porocilo izdelano...")
+
+#################################################################################### MAIN #######################################################
+
+#################### IZPIS URE #################
+
+end_time = datetime.datetime.now().time().strftime('%H:%M:%S')
+total_time=(datetime.datetime.strptime(end_time,'%H:%M:%S') - datetime.datetime.strptime(start_time,'%H:%M:%S'))
+now = datetime.datetime.now()
+current_time = now.strftime("%H:%M:%S")
+app.PrintPlain("Konec izvajanja programa ob " + str(current_time) + ". Potreben čas: " + str(total_time) + '.')
