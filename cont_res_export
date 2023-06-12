@@ -1,3 +1,5 @@
+!// DPL script used for exporting per-hour results of a contingency analysis. 
+
 object objStudyCase,elmRes,subRes,acContResFirst,element,oContingency,contLine,objContingency,sOutage;
 set setContRes,resObjs,acContRes,relevantObjs,sLines,sContingencies,sContingencyList,setContingencyCases, setContSubRes;
 int intColN,intRowN,size,colIndex,iCol,iRow,iLoadLim,contingencyNr,firstloop;
