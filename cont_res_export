@@ -1,0 +1,252 @@
+object objStudyCase,elmRes,subRes,acContResFirst,element,oContingency,contLine,objContingency,sOutage;
+set setContRes,resObjs,acContRes,relevantObjs,sLines,sContingencies,sContingencyList,setContingencyCases, setContSubRes;
+int intColN,intRowN,size,colIndex,iCol,iRow,iLoadLim,contingencyNr,firstloop;
+double loading, voltage, voltage1, voltageAdjusted;
+
+int error, row, col, actws;
+string s,contName, variable_name;
+int contNr,contcol,contNcurrent;
+int tstart, tstop, telapsed;
+
+tstart = GetSystemTimeUTC();
+
+ClearOutputWindow();
+Info('Začetek izvoza rezultatov contingency analiz');
+
+!// Zazeni excel v nacinu 1 - ni namescen.
+!// Za podrobnosti glej xlStart v DPL Prirocniku (str 114)
+error = xlStart(1); 
+if (error) {
+  Error('Problem pri zagonu excel aplikacije');
+  exit();
+}
+
+xlNewWorkbook(); !//Naredi novo excel datoteko/workbook
+!//Worksheet 0 je za max obr v N stanju
+xlSetWorksheetName(0,'Obr. N'); 
+!//Worksheet 1 je za obr v N-1
+xlAddWorksheet();
+xlSetWorksheetName(1,'Obr. N-1'); 
+!//Worksheet 2 je za contingencye pri max obr
+xlAddWorksheet();
+xlSetWorksheetName(2,'Obr.Cont'); 
+!//Worksheet 3 za napetosti v N
+xlAddWorksheet();
+xlSetWorksheetName(3,'Nap. N'); 
+!//Worksheet 4 napetosti v N-1 min
+xlAddWorksheet();
+xlSetWorksheetName(4,'Nap. N-1 Min'); 
+!//Worksheet 5 N-1 cintingencyi za min napetosti
+xlAddWorksheet();
+xlSetWorksheetName(5,'Nap.Min.Cont'); 
+!//Worksheet 6 napetosti v N-1 max
+xlAddWorksheet();
+xlSetWorksheetName(6,'Nap. N-1 Max'); 
+!//Worksheet 7 N-1 cintingencyi za max napetosti
+xlAddWorksheet();
+xlSetWorksheetName(7,'Nap.Max.Cont'); 
+
+!// Dobi study case, contingency sim in contingencye
+objStudyCase = GetActiveStudyCase();
+objContingency = GetFromStudyCase('.ComSimoutage');
+setContingencyCases = objContingency.GetContents('.ComOutage');
+!// Dobi contingency analysis in set(listo) vseh rezultatov
+setContRes = objStudyCase.GetContents('Contingency Analysis AC.ElmRes',0);
+acContResFirst = setContRes.First(); !Zberemo samo prvo ker da zgornja vrstica set/listo
+setContSubRes = acContResFirst.GetContents('*.ElmRes'); !//Set sub-rezultatov
+
+firstloop=1;
+iCol=2;
+for(subRes=setContSubRes.First();subRes;subRes=setContSubRes.Next()){
+  subRes.Load(); !// Load sub results file
+  !Info('Datoteka z rezultati %s nalozena',subRes);
+  intColN=subRes.GetNumberOfColumns();
+  intRowN=subRes.GetNumberOfRows();
+  !//Ce imamo sploh rezultate oz obstaja nekaj stolpcev (stolpcev>5)
+  if (intColN>5) {
+    xlActivateWorksheet(0); !//Aktiviraj worksheet 0 - obr N
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(0,'c:loading');col;col=subRes.GetNextValidVariable('c:loading')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(loading,0,col);
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,loading);
+      xlSetValue(iCol,iRow,loading); !Zapisi loading
+      iRow = iRow + 1;
+    }
+    Info('Izvozene vrednosti obremenitev v N za %s', subRes);
+    
+    xlActivateWorksheet(1); !//Aktiviraj worksheet 1 - obr N-1
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'c:maxLoading');col;col=subRes.GetNextValidVariable('c:maxLoading')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(loading,intRowN-1,col);
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,loading);
+      xlSetValue(iCol,iRow,loading); !Zapisi loading
+      iRow = iRow + 1;
+    }
+    Info('Izvozene vrednosti obremenitev v N-1 za %s', subRes);
+    
+    xlActivateWorksheet(2); !//Aktiviraj worksheet 2 - obr cont
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'c:maxCntcy');col;col=subRes.GetNextValidVariable('c:maxCntcy')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(contingencyNr,intRowN-1,col);
+      for (objContingency=setContingencyCases.First(); objContingency; objContingency=setContingencyCases.Next()) {
+        contNr = objContingency:number;
+        if(contNr = contingencyNr) {
+          contName = objContingency:loc_name;
+          !Info('%s with number %d',sOutage, contN);
+        }
+      }
+      if (contingencyNr > 0) {
+        !Info('Max obremenitev v N-1 za %s je %.2f %% pri izpadu %s (št. %d)', line, lineLoading, contName, contingencyNr);
+        xlSetValue(iCol, iRow, contName); !Contingency
+      }
+      else {
+        !Info('Max obremenitev za %s je %.2f v N stanju', line, lineLoading);
+        xlSetValue(iCol, iRow, 'N stanje');
+      }
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,loading);
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni contingencyi obremenitev za %s', subRes);
+    
+    xlActivateWorksheet(3); !//Aktiviraj worksheet 3 - nap v N
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(0,'m:u');col;col=subRes.GetNextValidVariable('m:u')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(voltage,0,col);
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,voltage);
+      voltageAdjusted = voltage * element:uknom;
+      xlSetValue(iCol,iRow,voltageAdjusted); !Zapisi loading
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni rezultati napetosti v N za %s', subRes);
+    
+    xlActivateWorksheet(4); !//Aktiviraj worksheet 4 - nap min
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'m:min_v');col;col=subRes.GetNextValidVariable('m:min_v')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(voltage,intRowN-1,col);
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,voltage);
+      voltageAdjusted = voltage * element:uknom;
+      xlSetValue(iCol,iRow,voltageAdjusted); !Zapisi loading
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni rezultati min napetosti v N-1 za %s', subRes);
+    
+    xlActivateWorksheet(5); !//Aktiviraj worksheet 5 - volt min cont
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'m:min_v_Cntcy');col;col=subRes.GetNextValidVariable('m:min_v_Cntcy')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(contingencyNr,intRowN-1,col);
+      for (objContingency=setContingencyCases.First(); objContingency; objContingency=setContingencyCases.Next()) {
+        contNr = objContingency:number;
+        if(contNr = contingencyNr) {
+          contName = objContingency:loc_name;
+          !Info('%s with number %d',sOutage, contN);
+        }
+      }
+      if (contingencyNr > 0) {
+        !Info('Max obremenitev v N-1 za %s je %.2f %% pri izpadu %s (št. %d)', line, lineLoading, contName, contingencyNr);
+        xlSetValue(iCol, iRow, contName); !Contingency
+      }
+      else {
+        !Info('Max obremenitev za %s je %.2f v N stanju', line, lineLoading);
+        xlSetValue(iCol, iRow, 'N stanje');
+      }
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,loading);
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni contingencyi min napetosti za %s', subRes);
+    
+    xlActivateWorksheet(6); !//Aktiviraj worksheet 6 - nap max
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'m:max_v');col;col=subRes.GetNextValidVariable('m:max_v')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(voltage,intRowN-1,col);
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,voltage);
+      voltageAdjusted = voltage * element:uknom;
+      xlSetValue(iCol,iRow,voltageAdjusted); !Zapisi loading
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni rezultati max napetosti v N-1 za %s', subRes);
+    
+    xlActivateWorksheet(7); !//Aktiviraj worksheet 7 - volt max cont
+    iRow=2;
+    for(col=subRes.GetFirstValidVariable(intRowN-1,'m:max_v_Cntcy');col;col=subRes.GetNextValidVariable('m:max_v_Cntcy')){ 
+      xlSetValue(iCol,1,subRes:loc_name);
+      variable_name = subRes.GetVariable(col);
+      element=subRes.GetObject(col);
+      if(firstloop){
+        xlSetValue(1,iRow,element:loc_name); !Na zacetku zapisi ime elementa
+      }
+      subRes.GetValue(contingencyNr,intRowN-1,col);
+      for (objContingency=setContingencyCases.First(); objContingency; objContingency=setContingencyCases.Next()) {
+        contNr = objContingency:number;
+        if(contNr = contingencyNr) {
+          contName = objContingency:loc_name;
+          !Info('%s with number %d',sOutage, contN);
+        }
+      }
+      if (contingencyNr > 0) {
+        !Info('Max obremenitev v N-1 za %s je %.2f %% pri izpadu %s (št. %d)', line, lineLoading, contName, contingencyNr);
+        xlSetValue(iCol, iRow, contName); !Contingency
+      }
+      else {
+        !Info('Max obremenitev za %s je %.2f v N stanju', line, lineLoading);
+        xlSetValue(iCol, iRow, 'N stanje');
+      }
+      !Info('Parameter %s, element %s of %d and %f',variable_name,element,col,loading);
+      iRow = iRow + 1;
+    }
+    Info('Izvozeni contingencyi max napetosti za %s', subRes);
+    iCol = iCol + 1;
+    if (firstloop){
+      firstloop = 0;
+    }
+  }
+  subRes.Release();
+}
+
+tstop = GetSystemTimeUTC();
+telapsed = tstop-tstart;
+Info('Izvoz contingency analiz v casu %d sekund', telapsed);
+
+xlSaveWorkbookAs(save_loc);
+xlTerminate();
