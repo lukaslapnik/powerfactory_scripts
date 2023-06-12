@@ -1,4 +1,5 @@
-# PFPY
+# Powerfactory scripts
+
 Repository containing Python and DPL scripts for automation in DigSILENT PowerFactory - power system analysis software.
 
 Code is far from optimal, written in a limited timeframe, specific purpose and with poor commenting. Due to very limited amount of similar code on github, I still think some people might find this useful and copy and modify parts of the code for their purposes.
