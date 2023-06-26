@@ -18,18 +18,6 @@ app.ClearOutputWindow()
 ##########################################################################################################################################################################
 #############################################################################   PARAMETRI   ##############################################################################
 ##########################################################################################################################################################################
-# Parametri za izračun jalovih moči za gen, load, vac..... načeloma če delamo DC loadflow ni važno
-# Za AC loadflow je treba porihtat oz najt neke boljše načine dodeljevanja jalovih.
-# spreminjaj_jalovo = False  # Ali skripta sploh spreminja parametre proizvodnje/porabe jalove moči. False - jalova enaka, True - jalovo spreminja
-# izhodiscni_cosfi = True     # Ce je true, bo cosfi enak kot v izhodiscnem modelu, sicer vzame vrednosti definirane spodaj (razmerje med Q in P)
-
-#Namesto cosfi se vnese razmerje PQ_ratio = tan(acos(cosfi(0.xx)))
-#Pri cosfi 0.98 ~ 0.2
-#Pri cosfi 0.97 ~ 0.25
-#Pri cosfi 0.96 ~ 0.3
-# generator_PQ_ratio = 0.25 #Delez jalove
-# load_PQ_ratio = 0.25
-# voltagesource_PQ_ratio = 0
 
 #Izkoristek omrezja (izgube)
 izkoristek_omrezja = 0.97 #(1-izgube)
@@ -41,15 +29,6 @@ stringBorderInfoFile = "Robna vozlisca Info.csv"
 stringIzbranaPFile = "Izbrana vozlisca P.csv"
 stringIzbranaQFile = "Izbrana vozlisca Q.csv"
 stringIzbranaInfoFile = "Izbrana vozlisca Info.csv"
-
-#   ['UKNI','UK00','UA02','UA01','TR00','TN00','SK00','SI00','SE04','SE03','SE02','SE01','SA00','RU00',
-#   'RS00','RO00','PT00','PS00','PL00','NSW0','NOS0','NON1','NOM1','NL00','MT00','MK00','ME00','MD00',
-#   'MA00','LY00','LV00','LUV1','LUG1','LUF1','LUB1','LT00','ITSI','ITSA','ITS1','ITN1','ITCS','ITCN',
-#   'ITCA','IS00','IL00','IE00','HU00','HR00','GR03','GR00','FR15','FR00','FI00','ES00','ELES Interconnectios',
-#   'EG00','EE00','DZ00','DKW1','DKKF','DEKF','DE00','CZ00','CY00','CH00','BG00','BE00','BA00','AT00','AL00']
-
-#Drzave/sistemi, ki jim spreminjamo parametre. Vnesi tako kot je v market datoteki ali v powerfactory modelu
-# sistemi_spreminjanje_parametrov = ['SI00','ITN1','HU00','HR00','ELES Interconnectios']
 
 ##########################################################################################################################################################################
 #############################################################################   PARAMETRI   ##############################################################################
