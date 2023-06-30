@@ -16,23 +16,6 @@ from tkinter import filedialog
 #Ali laufamo v engine mode (spyder) ali se izvaja v PowerFactory
 use_powerfactory = True
 
-#Parametri za izračun jalovih moči za gen, load, vac..... načeloma če delamo DC loadflow ni važno
-# Za AC loadflow je treba porihtat oz najt neke boljše načine dodeljevanja jalovih. 
-
-#Imena uvoženih datotek, glej da se sklada z tistim kar nardi skripta za pretvorbo excel->csv
-stringMarketDataFile = "Market Data.csv"
-stringBorderFlowFile = "Border Flow Data.csv"
-stringBorderInfoFile = "Border Flow Parameters.csv"
-stringIzbranaPFile = "Izbrana vozlisca P.csv"
-stringIzbranaQFile = "Izbrana vozlisca Q.csv"
-stringIzbranaInfoFile = "Izbrana vozlisca Info.csv"
-##########################################################################################################
-
-# if engine_mode:
-#     print("Running in engine mode")
-#     sys.path.append(r"C:\Program Files\DIgSILENT\PowerFactory 2022 SP1\Python\3.9")
-
-
 if use_powerfactory:
     import powerfactory as pf    
     app = pf.GetApplication()
