@@ -264,24 +264,6 @@ app.PrintPlain("Datoteke uvozene in obdelane")
 
 app.PrintPlain("Zacenjam uvoz v powerfactory")
 
-# #Make time scale for a year in libry folder
-# timescale_name = "Time Scale"
-# timescale = fLibrary.SearchObject(timescale_name)
-# if not timescale:
-#     try:
-#         app.PrintPlain("No timescale named " + timescale_name + " exists, creating")
-#         fLibrary.CreateObject("TriTime", timescale_name)
-#         timescale = fLibrary.GetContents(timescale_name + ".TriTime")[0]
-#         app.PrintPlain("Made " + timescale_name + " vector!")
-#     except:
-#         app.PrintWarn("Problem creating timescale")
-# if timescale:
-#     app.PrintPlain("Timescale vector " + timescale_name + " exists!")
-#     timescale.SetAttribute("unit", 3)
-#     timescale_vector = list(range(0,8760))
-#     timescale.SetAttribute("scale", timescale_vector)
-#     app.PrintPlain("Edited " + timescale_name + " vector!")
-
 #Delete current station(external) controllers in project
 if clear_old_data: 
     for stationcontroller in app.GetCalcRelevantObjects("*.ElmStactrl"): 
