@@ -2,7 +2,7 @@
 """
 Created on Fri Jan 27 14:44:29 2023
 
-@author: SSIMON
+@author: slluka
 """
 
 import os
