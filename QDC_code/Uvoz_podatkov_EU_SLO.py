@@ -2,7 +2,7 @@
 """
 Created on Fri Jan 27 14:44:29 2023
 
-@author: SSIMON
+@author: lukc
 """
 
 import os
@@ -16,6 +16,8 @@ from tkinter import filedialog
 use_powerfactory = True
 # ČE JE TRUE ŠE ROČNO DEFINIRAJ TOČNO IME PROJEKTA
 clear_old_data = True
+
+detailed_info = False
 
 voltage_table = {}
 voltage_table["0"] = 750.0
@@ -55,111 +57,110 @@ if use_powerfactory: app.PrintPlain("Pričetek izvajanja programa ob " + str(sta
 else: print("Pričetek izvajanja programa ob " + str(start_time) + ".")
 ##########################################################################################################
 
-if True:
-    #Open excel files
-    Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-    app.PrintPlain("Izberi vhodno mapo za SLO podatke")
-    dirFolder_SLO = filedialog.askdirectory()
-    file_gen_list_SLO = []
-    file_load_list_SLO = []
-    # Daj na true ce mamo .csv datoteke
-    havecsvfiles = True
-    for root, dirs, files in os.walk(dirFolder_SLO):
-        for file in files:
-            if havecsvfiles:
-                if "PROIZVODNJA" in file and file.endswith(".csv"):
-                    file_gen_list_SLO.append(os.path.join(root, file))
-                if "ODJEM" in file and file.endswith(".csv"):
-                    file_load_list_SLO.append(os.path.join(root, file))
-            else:
-                if "PROIZVODNJA" in file and file.endswith(".xlsx"):
-                    file_gen_list_SLO.append(os.path.join(root, file))
-                if "ODJEM" in file and file.endswith(".xlsx"):
-                    file_load_list_SLO.append(os.path.join(root, file))
-        
-    app.PrintPlain("Izbrane datoteke SLO podatkov")
-    app.PrintPlain(file_gen_list_SLO)
-    app.PrintPlain(file_load_list_SLO)
+#Open excel files
+Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+app.PrintPlain("Izberi vhodno mapo za SLO podatke")
+dirFolder_SLO = filedialog.askdirectory()
+file_gen_list_SLO = []
+file_load_list_SLO = []
+# Daj na true ce mamo .csv datoteke
+havecsvfiles = True
+for root, dirs, files in os.walk(dirFolder_SLO):
+    for file in files:
+        if havecsvfiles:
+            if "PROIZVODNJA" in file and file.endswith(".csv"):
+                file_gen_list_SLO.append(os.path.join(root, file))
+            if "ODJEM" in file and file.endswith(".csv"):
+                file_load_list_SLO.append(os.path.join(root, file))
+        else:
+            if "PROIZVODNJA" in file and file.endswith(".xlsx"):
+                file_gen_list_SLO.append(os.path.join(root, file))
+            if "ODJEM" in file and file.endswith(".xlsx"):
+                file_load_list_SLO.append(os.path.join(root, file))
+    
+app.PrintPlain("Izbrane datoteke SLO podatkov")
+app.PrintPlain(file_gen_list_SLO)
+app.PrintPlain(file_load_list_SLO)
 
-    #MAPA ZA EU PODATKE
-    #Open excel files
-    Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-    app.PrintPlain("Izberi vhodno mapo za ostale EU podatke")
-    dirFolder_EU = filedialog.askdirectory()
-    file_gen_list_EU = []
-    file_load_list_EU = []
-    # Daj na true ce mamo .csv datoteke
-    havecsvfiles = True
-    for root, dirs, files in os.walk(dirFolder_EU):
-        for file in files:
-            if havecsvfiles:
-                if "GEN" in file and file.endswith(".csv"):
-                    file_gen_list_EU.append(os.path.join(root, file))
-                if "LOAD" in file and file.endswith(".csv"):
-                    file_load_list_EU.append(os.path.join(root, file))
-            else:
-                if "GEN" in file and file.endswith(".xlsx"):
-                    file_gen_list_EU.append(os.path.join(root, file))
-                if "LOAD" in file and file.endswith(".xlsx"):
-                    file_load_list_EU.append(os.path.join(root, file))
-        
-    app.PrintPlain("Izbrane datoteke EU")
-    app.PrintPlain(file_gen_list_EU)
-    app.PrintPlain(file_load_list_EU)
+#MAPA ZA EU PODATKE
+#Open excel files
+Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+app.PrintPlain("Izberi vhodno mapo za ostale EU podatke")
+dirFolder_EU = filedialog.askdirectory()
+file_gen_list_EU = []
+file_load_list_EU = []
+# Daj na true ce mamo .csv datoteke
+havecsvfiles = True
+for root, dirs, files in os.walk(dirFolder_EU):
+    for file in files:
+        if havecsvfiles:
+            if "GEN" in file and file.endswith(".csv"):
+                file_gen_list_EU.append(os.path.join(root, file))
+            if "LOAD" in file and file.endswith(".csv"):
+                file_load_list_EU.append(os.path.join(root, file))
+        else:
+            if "GEN" in file and file.endswith(".xlsx"):
+                file_gen_list_EU.append(os.path.join(root, file))
+            if "LOAD" in file and file.endswith(".xlsx"):
+                file_load_list_EU.append(os.path.join(root, file))
+    
+app.PrintPlain("Izbrane datoteke EU")
+app.PrintPlain(file_gen_list_EU)
+app.PrintPlain(file_load_list_EU)
 
-    ############################################# UVAŽANJE IN OBDELAVA PODATKOV ##############################################
-    
-    #FOR GENS
-    dfGenP_SLO = pd.DataFrame()
-    dfGenQ_SLO = pd.DataFrame()
-    
-    app.PrintPlain(f"Import fajla {file_gen_list_SLO[0]}")
-    if havecsvfiles:
-        dfDataGen_Temp_SLO = pd.read_csv(file_gen_list_SLO[0], index_col = 0)
-    else:
-        file1 = pd.ExcelFile(file_gen_list_SLO[0])
-        file1_sheets = file1.sheet_names
-        dfDataGen_Temp_SLO = pd.DataFrame()
-        dfDataGen_Temp_SLO = file1.parse(file1_sheets[0], index_col = 0)
-        
-    dfGenP_SLO = dfDataGen_Temp_SLO[dfDataGen_Temp_SLO['P/Q'] == "MW"].drop(["P/Q"], axis = 'columns')
-    dfGenQ_SLO = dfDataGen_Temp_SLO[dfDataGen_Temp_SLO['P/Q'] == "Mvar"].drop(["P/Q"], axis = 'columns')
-    #Replace missing data with 0
-    dfGenP_SLO = dfGenP_SLO.interpolate(method='linear', axis = 1)
-    dfGenQ_SLO = dfGenQ_SLO.interpolate(method='linear', axis = 1)
-    dfGenP_SLO = dfGenP_SLO.fillna(0.0)
-    dfGenQ_SLO = dfGenQ_SLO.fillna(0.0)
-        
-    app.PrintPlain(dfGenP_SLO) 
-    app.PrintPlain(dfGenQ_SLO)   
-    
-    #FOR LOADS
-    dfLoadP_SLO = pd.DataFrame()
-    dfLoadQ_SLO = pd.DataFrame()
-    
-    app.PrintPlain(f"Import fajla {file_load_list_SLO[0]}")
-    if havecsvfiles:
-        dfDataLoad_Temp_SLO = pd.read_csv(file_load_list_SLO[0], index_col = 0)
-    else:
-        file2 = pd.ExcelFile(file_load_list_SLO[0])
-        file2_sheets = file2.sheet_names
-        dfDataLoad_Temp_SLO = pd.DataFrame()
-        dfDataLoad_Temp_SLO = file2.parse(file2_sheets[0], index_col = 0)
-            
-    dfLoadP_SLO = dfDataLoad_Temp_SLO[dfDataLoad_Temp_SLO['P/Q'] == "MW"].drop(["P/Q"], axis = 'columns')
-    dfLoadQ_SLO = dfDataLoad_Temp_SLO[dfDataLoad_Temp_SLO['P/Q'] == "Mvar"].drop(["P/Q"], axis = 'columns')
-    #Replace missing data with 0
-    dfLoadP_SLO = dfLoadP_SLO.interpolate(method='linear', axis = 1)
-    dfLoadQ_SLO = dfLoadQ_SLO.interpolate(method='linear', axis = 1)
-    dfLoadP_SLO = dfLoadP_SLO.fillna(0.0)
-    dfLoadQ_SLO = dfLoadQ_SLO.fillna(0.0)
+############################################# UVAŽANJE IN OBDELAVA PODATKOV ##############################################
 
-    app.PrintPlain(dfLoadP_SLO) 
-    app.PrintPlain(dfLoadQ_SLO)   
-    
-    app.PrintPlain("Datoteke za SLO uvozene in obdelane")
+#FOR GENS
+dfGenP_SLO = pd.DataFrame()
+dfGenQ_SLO = pd.DataFrame()
 
-################### UVOZENO ZA SLO, ZDAJ SE OSTALE DRZAVE #############################################
+app.PrintPlain(f"Import fajla {file_gen_list_SLO[0]}")
+if havecsvfiles:
+    dfDataGen_Temp_SLO = pd.read_csv(file_gen_list_SLO[0], index_col = 0)
+else:
+    file1 = pd.ExcelFile(file_gen_list_SLO[0])
+    file1_sheets = file1.sheet_names
+    dfDataGen_Temp_SLO = pd.DataFrame()
+    dfDataGen_Temp_SLO = file1.parse(file1_sheets[0], index_col = 0)
+    
+dfGenP_SLO = dfDataGen_Temp_SLO[dfDataGen_Temp_SLO['P/Q'] == "MW"].drop(["P/Q"], axis = 'columns')
+dfGenQ_SLO = dfDataGen_Temp_SLO[dfDataGen_Temp_SLO['P/Q'] == "Mvar"].drop(["P/Q"], axis = 'columns')
+#Replace missing data with 0
+dfGenP_SLO = dfGenP_SLO.interpolate(method='linear', axis = 1)
+dfGenQ_SLO = dfGenQ_SLO.interpolate(method='linear', axis = 1)
+dfGenP_SLO = dfGenP_SLO.fillna(0.0)
+dfGenQ_SLO = dfGenQ_SLO.fillna(0.0)
+    
+app.PrintPlain(dfGenP_SLO) 
+app.PrintPlain(dfGenQ_SLO)   
+
+#FOR LOADS
+dfLoadP_SLO = pd.DataFrame()
+dfLoadQ_SLO = pd.DataFrame()
+
+app.PrintPlain(f"Import fajla {file_load_list_SLO[0]}")
+if havecsvfiles:
+    dfDataLoad_Temp_SLO = pd.read_csv(file_load_list_SLO[0], index_col = 0)
+else:
+    file2 = pd.ExcelFile(file_load_list_SLO[0])
+    file2_sheets = file2.sheet_names
+    dfDataLoad_Temp_SLO = pd.DataFrame()
+    dfDataLoad_Temp_SLO = file2.parse(file2_sheets[0], index_col = 0)
+        
+dfLoadP_SLO = dfDataLoad_Temp_SLO[dfDataLoad_Temp_SLO['P/Q'] == "MW"].drop(["P/Q"], axis = 'columns')
+dfLoadQ_SLO = dfDataLoad_Temp_SLO[dfDataLoad_Temp_SLO['P/Q'] == "Mvar"].drop(["P/Q"], axis = 'columns')
+#Replace missing data with 0
+dfLoadP_SLO = dfLoadP_SLO.interpolate(method='linear', axis = 1)
+dfLoadQ_SLO = dfLoadQ_SLO.interpolate(method='linear', axis = 1)
+dfLoadP_SLO = dfLoadP_SLO.fillna(0.0)
+dfLoadQ_SLO = dfLoadQ_SLO.fillna(0.0)
+
+app.PrintPlain(dfLoadP_SLO) 
+app.PrintPlain(dfLoadQ_SLO)   
+
+app.PrintPlain("Datoteke za SLO uvozene in obdelane")
+
+################### UVOZENO ZA SLO, ZDAJ SE OSTALE EU DRZAVE #############################################
  
 app.PrintPlain("Zacetek uvoza EU podatkov")
 #FOR GENS
@@ -262,11 +263,11 @@ dfLoadP_EU = dfLoadP_EU.fillna(0.0)
 dfLoadQ_EU = dfLoadQ_EU.fillna(0.0)
     
 
-app.PrintPlain("Datoteke uvozene in obdelane")
+app.PrintPlain("Vhodni podatki uvozeni in obdelani")
     
 ############################ DATA IMPORTED ######################
 
-app.PrintPlain("Zacenjam uvoz v powerfactory")
+app.PrintPlain("Zacetek izdelave karakteristik")
 
 #Delete current station(external) controllers in project
 if clear_old_data: 
@@ -286,26 +287,43 @@ for generator in app.GetCalcRelevantObjects("*.ElmSym"):
     if generator_name in dfGenP_SLO.index:
         #Generatorji v slo za katere uporabimo podatke
         generators_slo.append(generator)
-        app.PrintPlain(f"Generator SLO {generator}")
+        if detailed_info: app.PrintPlain(f"Generator SLO {generator}")
     elif generator_name in dfGenP_EU.index:
+        if detailed_info: app.PrintPlain(f"Generator EU {generator}")
         try:
             #Generator ma okej določeno vse
             generator_station_voltage = generator.bus1.cterm.cpSubstat.loc_name + "_" + generator_name[6]
             if generator_station_voltage in generator_station_voltage_list:
                 generators_pq.append(generator)
-                app.PrintPlain(f"generator {generator} bo SAMO PQ substation {generator_station_voltage}")
+                if detailed_info: app.PrintPlain(f"generator {generator} bo SAMO PQ substation {generator_station_voltage}")
             else:
                 generators_adaptive.append(generator)
                 generator_station_voltage_list.append(generator_station_voltage)
-                app.PrintPlain(f"generator {generator} bo ADAPTIVE substation {generator_station_voltage}")
+                if detailed_info: app.PrintPlain(f"generator {generator} bo ADAPTIVE substation {generator_station_voltage}")
         except:
-            app.PrintWarn(f"napaka za {generator}, nima dolocenega substation oz nek drugi problem....")
+            if detailed_info: app.PrintWarn(f"napaka za {generator}, nima dolocenega substation oz nek drugi problem....")
     else:
-        app.PrintWarn(f"Neznani generator {generator}")
-        
-############################ DATA IMPORTED ######################
+        app.PrintWarn(f"Neznani generator {generator} - nima vhodnih podatkov")
 
-app.PrintPlain("Zacenjam uvoz v powerfactory")
+app.PrintPlain(generators_slo)
+app.PrintPlain(generators_adaptive)
+app.PrintPlain(generators_pq)
+
+loads_slo = []
+loads_other = []
+for load in app.GetCalcRelevantObjects("*.ElmLod"):
+    if load in dfLoadP_SLO.index:
+        loads_slo.append(load)
+        if detailed_info: app.PrintPlain(f"Load SLO {load}")
+    elif load in dfLoadP_EU.index:
+        loads_other.append(load)
+        if detailed_info: app.PrintPlain(f"Load EU {load}")
+    else:
+        app.PrintWarn(f"Breme/Odjem {load} nima podatkov")
+        
+app.PrintPlain(loads_slo)
+app.PrintPlain(loads_other)
+############################ DOLOCENI GENERATORJI ######################
 
 #Make time scale for a year in libry folder
 timescale_name = "Time Scale"
@@ -326,13 +344,12 @@ if timescale:
     app.PrintPlain("Edited " + timescale_name + " vector!")
     
 #Če je slo se nastavi samo PQ
-for generator in generators_slo:
+for i,generator in enumerate(generators_slo):
     generator_name = generator.GetAttribute("loc_name")
     #Klasična bremena/odjem
-    app.PrintPlain(f"Proizvodnja {generator}")
+    app.PrintPlain(f"Uvozeni podatki za {generator} v SLO, {i+1}/{len(generators_slo)}")
     try:
         #Assign P vector
-        app.PrintPlain(f"Generator/proizvodnja {generator}")
         # Remove old data
         if clear_old_data:
             for chaOld in generator.GetContents("pgini*.ChaVec"): chaOld.Delete() 
@@ -341,7 +358,7 @@ for generator in generators_slo:
         chaPgini.SetAttribute("scale", timescale)
         chaPgini.SetAttribute("vector", dfGenP_SLO.loc[generator_name].to_list())
         chaPgini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Nastavil podatke P {chaPgini} za {generator}")
+        if detailed_info: app.PrintPlain(f"Nastavil podatke P {chaPgini} za {generator}")
     except:
         app.PrintWarn(f"Napaka nastavljanja P za {generator}, preveri vhodne datoteke!")
     
@@ -355,14 +372,16 @@ for generator in generators_slo:
         chaQgini.SetAttribute("scale", timescale)
         chaQgini.SetAttribute("vector", dfGenQ_SLO.loc[generator_name].to_list())
         chaQgini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Nastavil podatke Q {chaQgini} za {generator}")
+        if detailed_info: app.PrintPlain(f"Nastavil podatke Q {chaQgini} za {generator}")
     except:
         app.PrintWarn(f"Napaka nastavljanja Q za {generator}, preveri vhodne datoteke!")
     
     
 #Če je adaptive se dela station control
-for generator in generators_adaptive:
+for i,generator in enumerate(generators_adaptive):
     generator_name = generator.GetAttribute("loc_name")
+    #Adaptive gen torej station control
+    app.PrintPlain(f"Uvozeni podatki za PV/PQ generator {generator}, št. {i+1}/{len(generators_adaptive)}")
     #Assign P vector
     # Remove old data
     if clear_old_data:
@@ -372,7 +391,7 @@ for generator in generators_adaptive:
     chaPgini.SetAttribute("scale", timescale)
     chaPgini.SetAttribute("vector", dfGenP_EU.loc[generator_name].to_list())
     chaPgini.SetAttribute("usage", 2)
-    app.PrintPlain(f"Katkteristika P {chaPgini} za generator {generator}")
+    if detailed_info: app.PrintPlain(f"Katkteristika P {chaPgini} za generator {generator}")
     
     #Create station controller for generator
     stationcontroller = generator.GetParent().CreateObject("ElmStactrl", generator_name + "_SC.ElmStactrl") 
@@ -384,7 +403,7 @@ for generator in generators_adaptive:
     # Assign control nodes (generator terminal for voltage and cub for reactive power Q) 
     stationcontroller.SetAttribute("rembar", generator.GetAttribute("bus1").GetAttribute("cterm"))
     stationcontroller.SetAttribute("p_cub", generator.GetAttribute("bus1"))
-    app.PrintPlain(f"Narejen {stationcontroller} za generator {generator}")
+    if detailed_info: app.PrintPlain(f"Narejen {stationcontroller} za generator {generator}")
     
     # Characteristic for Type
     # Remove old data
@@ -395,7 +414,7 @@ for generator in generators_adaptive:
     chaSC_Type.SetAttribute("scale", timescale)
     chaSC_Type.SetAttribute("vector", dfGenNodeType_EU.loc[generator_name].to_list())
     chaSC_Type.SetAttribute("usage", 2)
-    app.PrintPlain(f"Katkteristika PV/PQ {chaSC_Type} za station kontroler {stationcontroller}")
+    if detailed_info: app.PrintPlain(f"Katkteristika PV/PQ {chaSC_Type} za station kontroler {stationcontroller}")
     
     # Create characteritic for voltage U
     # Remove old data
@@ -406,7 +425,7 @@ for generator in generators_adaptive:
     chaSC_U.SetAttribute("scale", timescale)
     chaSC_U.SetAttribute("vector", dfGenU_EU.loc[generator_name].to_list())
     chaSC_U.SetAttribute("usage", 2)
-    app.PrintPlain(f"Karakteristika U {chaSC_U} za station kontroler {stationcontroller}")
+    if detailed_info: app.PrintPlain(f"Karakteristika U {chaSC_U} za station kontroler {stationcontroller}")
     
     # Characteristic for Q
     # Remove old data
@@ -417,17 +436,15 @@ for generator in generators_adaptive:
     chaSC_Q.SetAttribute("scale", timescale)
     chaSC_Q.SetAttribute("vector", dfGenQ_EU.loc[generator_name].to_list())
     chaSC_Q.SetAttribute("usage", 2)
-    app.PrintPlain(f"Karakteristika Q {chaSC_Q}za station kontroler {stationcontroller}")
+    if detailed_info: app.PrintPlain(f"Karakteristika Q {chaSC_Q}za station kontroler {stationcontroller}")
         
-for generator in generators_pq:
+for i,generator in enumerate(generators_pq):
     generator_name = generator.GetAttribute("loc_name")
     #Klasična bremena/odjem
-    app.PrintPlain(f"Proizvodnja {generator} samo kot PQ brez station controllerkja, nastavljeno na constQ mode")
+    app.PrintPlain(f"Proizvodnja {generator} samo kot PQ brez station controllerja, nastavljeno na constQ mode, št. {i+1}/{len(generators_pq)}")
     generator.av_mode = "constq"
-    
     try:
         #Assign P vector
-        app.PrintPlain(f"Generator/proizvodnja {generator}")
         # Remove old data
         if clear_old_data:
             for chaOld in generator.GetContents("pgini*.ChaVec"): chaOld.Delete() 
@@ -436,7 +453,7 @@ for generator in generators_pq:
         chaPgini.SetAttribute("scale", timescale)
         chaPgini.SetAttribute("vector", dfGenP_EU.loc[generator_name].to_list())
         chaPgini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Nastavil podatke P {chaPgini} za {generator}")
+        if detailed_info: app.PrintPlain(f"Nastavil podatke P {chaPgini} za {generator}")
     except:
         app.PrintWarn(f"Napaka nastavljanja P za {generator}, preveri vhodne datoteke!")
     
@@ -450,62 +467,61 @@ for generator in generators_pq:
         chaQgini.SetAttribute("scale", timescale)
         chaQgini.SetAttribute("vector", dfGenQ_EU.loc[generator_name].to_list())
         chaQgini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Nastavil podatke Q {chaQgini} za {generator}")
+        if detailed_info: app.PrintPlain(f"Nastavil podatke Q {chaQgini} za {generator}")
     except:
         app.PrintWarn(f"Napaka nastavljanja Q za {generator}, preveri vhodne datoteke!")
     
     
-for load in app.GetCalcRelevantObjects("*.ElmLod"):
+for i,load in enumerate(loads_slo):
     load_name = load.GetAttribute("loc_name")
-    if load_name in dfLoadP_SLO.index:
-        #Assign P vector
-        # Remove old data
-        if clear_old_data:
-            for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaPlini = load.CreateObject("ChaVec", "plini")
-        chaPlini.SetAttribute("scale", timescale)
-        chaPlini.SetAttribute("vector", dfLoadP_SLO.loc[load_name].to_list())
-        chaPlini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned {chaPlini} for {load}")
-        
-        #Assign Q vector
-        # Remove old data
-        if clear_old_data:
-            for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaQlini = load.CreateObject("ChaVec", "qlini")
-        chaQlini.SetAttribute("scale", timescale)
-        chaQlini.SetAttribute("vector", dfLoadQ_SLO.loc[load_name].to_list())
-        chaQlini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned {chaQlini} for {load}")
-        
-    elif load_name in dfLoadP_EU.index:
-        #Assign P vector
-        # Remove old data
-        if clear_old_data:
-            for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaPlini = load.CreateObject("ChaVec", "plini")
-        chaPlini.SetAttribute("scale", timescale)
-        chaPlini.SetAttribute("vector", dfLoadP_EU.loc[load_name].to_list())
-        chaPlini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned {chaPlini} for {load}")
-        
-        #Assign Q vector
-        # Remove old data
-        if clear_old_data:
-            for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
-        # Assign controller to generator
-        chaQlini = load.CreateObject("ChaVec", "qlini")
-        chaQlini.SetAttribute("scale", timescale)
-        chaQlini.SetAttribute("vector", dfLoadQ_EU.loc[load_name].to_list())
-        chaQlini.SetAttribute("usage", 2)
-        app.PrintPlain(f"Created and assigned {chaQlini} for {load}")
-    else:
-        app.PrintWarn(f"Breme/Odjem {load} nima podatkov")
+    app.PrintPlain(f"Nastavitev karakteristik za breme {load}, {i+1}/{len(loads_slo)}")
+    #Assign P vector
+    # Remove old data
+    if clear_old_data:
+        for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
+    # Assign controller to generator
+    chaPlini = load.CreateObject("ChaVec", "plini")
+    chaPlini.SetAttribute("scale", timescale)
+    chaPlini.SetAttribute("vector", dfLoadP_SLO.loc[load_name].to_list())
+    chaPlini.SetAttribute("usage", 2)
+    if detailed_info: app.PrintPlain(f"Narejena karakteristika P {chaPlini} za odjem {load}")
     
-
+    #Assign Q vector
+    # Remove old data
+    if clear_old_data:
+        for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
+    # Assign controller to generator
+    chaQlini = load.CreateObject("ChaVec", "qlini")
+    chaQlini.SetAttribute("scale", timescale)
+    chaQlini.SetAttribute("vector", dfLoadQ_SLO.loc[load_name].to_list())
+    chaQlini.SetAttribute("usage", 2)
+    if detailed_info: app.PrintPlain(f"Narejena karakteristika Q {chaQlini} za odjem {load}")
+      
+for i,load in enumerate(loads_other):
+    load_name = load.GetAttribute("loc_name")  
+    app.PrintPlain(f"Nastavitev karakteristik za breme {load}, {i+1}/{len(loads_other)}")
+    #Assign P vector
+    # Remove old data
+    if clear_old_data:
+        for chaOld in load.GetContents("plini*.ChaVec"): chaOld.Delete() 
+    # Assign controller to generator
+    chaPlini = load.CreateObject("ChaVec", "plini")
+    chaPlini.SetAttribute("scale", timescale)
+    chaPlini.SetAttribute("vector", dfLoadP_EU.loc[load_name].to_list())
+    chaPlini.SetAttribute("usage", 2)
+    if detailed_info: app.PrintPlain(f"Narejena karakteristika P {chaPlini} za odjem {load}")
+    
+    #Assign Q vector
+    # Remove old data
+    if clear_old_data:
+        for chaOld in load.GetContents("qlini*.ChaVec"): chaOld.Delete() 
+    # Assign controller to generator
+    chaQlini = load.CreateObject("ChaVec", "qlini")
+    chaQlini.SetAttribute("scale", timescale)
+    chaQlini.SetAttribute("vector", dfLoadQ_EU.loc[load_name].to_list())
+    chaQlini.SetAttribute("usage", 2)
+    if detailed_info: app.PrintPlain(f"Narejena karakteristika Q {chaQlini} za odjem {load}")
+    
 #################### IZPIS URE ################# KONEC #############################
 
 end_time = datetime.datetime.now().time().strftime('%H:%M:%S')
