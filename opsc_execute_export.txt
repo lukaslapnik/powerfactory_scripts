@@ -1,3 +1,5 @@
+!// This code is used for automatic analysis of different operation scenarios and exporting results into excel file. You have to create a new script in PowerFactory and pase the code below. Save location is passed through "save_loc" parameter (string) which you have to define manually. You also have to define parameter "AC" as a 0 or 1 bool, which defines if you want to run and export AC or DC load flow. 
+
 object objStudyCase,elmRes,acContResFirst,element,oContingency,contLine,objContingency,sOutage;
 set setContRes,resObjs,acContRes,relevantObjs,sLines,sContingencies,sContingencyList,setContingencyCases, setContelmRes;
 int intColN,intRowN,size,colIndex,iCol,iRow,iLoadLim,contingencyNr,firstloop;
