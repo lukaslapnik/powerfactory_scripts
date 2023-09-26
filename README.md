@@ -7,3 +7,5 @@ Code is far from optimal, written in a limited timeframe, specific purpose and w
 Most of the code is used to process excel/csv files with data and import it into powerfactory for simulation purposes. The imput data is confidential and cannot be uploaded.  
 
 Code was used on PowerFactory version 2022, SP1, but it should work with other versions. Make sure to include the correct powerfactory.pyd library.
+
+I shared DPL scripts in plain text. You have to manually create a DPL script in PowerFactory software, define the variables and then paste the script code. Info is included in the beginning of the txt file. 
