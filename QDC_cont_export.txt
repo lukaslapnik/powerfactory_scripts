@@ -1,0 +1,54 @@
+#Variable string | save_loc | C:\\....\file.xlsx | Lokacija shranjevanja
+
+object oTable;
+set sReports;
+int iCount;
+string strPath;
+int iReset;
+object oContingencyAnalysis;
+object oContingencyReport;
+object case,
+       elmRes;
+set resObjs;
+
+object oDCContRes;
+set setDCContSubRes;
+
+object prj,zone,obj;
+string prjName;
+
+! output elements in the zone
+prj = GetActiveProject();
+Info('Izvoz rezultatov za projekt %s', prjName);
+
+!Get results and subresults
+oDCContRes = GetFromStudyCase('Contingency Analysis DC.ElmRes');
+setDCContSubRes = oDCContRes.GetContents('*.ElmRes');
+
+Info('%s', oDCContRes);
+
+oContingencyReport = GetFromStudyCase('ComCntreport');
+
+!Loopaj cez datoteke z rezultati
+for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
+  Info('Datoteka z rezultati %s',elmRes);
+  !Select result file
+  oContingencyReport:p_rescnt = elmRes;
+  oContingencyReport:iopt_ml = 1;
+  oContingencyReport:iopt_maxl = 0;
+  !Generate contingency report
+  oContingencyReport.Execute();
+  !Save path
+  strPath=sprintf('%s%s%s%s%s',save_loc,prj:loc_name,' ',elmRes:loc_name,'.xlsx');
+  Info('%s',strPath);
+  !Get report
+  sReports=GetTableReports();
+  iCount=sReports.Count();
+  !Ce je report ga izvozi v excel
+  if(iCount>=1){
+    for(oTable=sReports.First();oTable;oTable=sReports.Next()){
+      oTable.ExportToExcel(strPath,0); ! 1 opens the file directly
+    }
+  }
+  CloseTableReports();
+}
