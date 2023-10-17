@@ -1,4 +1,5 @@
-#Variable string | save_loc | C:\\....\file.xlsx | Lokacija shranjevanja
+#Script that exports PF contingency analysis results 
+#Variable string | save_loc | C:\\....\file.xlsx | Save location
 
 object oTable;
 set sReports;
@@ -21,15 +22,14 @@ string prjName;
 prj = GetActiveProject();
 Info('Izvoz rezultatov za projekt %s', prjName);
 
-!Get results and subresults
+! Get DC contingency results and subresults for each hour
 oDCContRes = GetFromStudyCase('Contingency Analysis DC.ElmRes');
 setDCContSubRes = oDCContRes.GetContents('*.ElmRes');
-
+! 
 Info('%s', oDCContRes);
-
+! Get contingency report object 
 oContingencyReport = GetFromStudyCase('ComCntreport');
-
-!Loopaj cez datoteke z rezultati
+! Loop through result files 
 for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
   Info('Datoteka z rezultati %s',elmRes);
   !Select result file
