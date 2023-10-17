@@ -1,6 +1,7 @@
 #Script that exports PF contingency analysis results for each separate hour. Run contingency analysis with multiple defines dates/times beforehand. Works for DC contingency, for AC contingency change the results location (Contingency Analysis DC.ElmRes -> Contingency Analysis AC.ElmRes)
 #Variable string | save_loc | C:\\....\file.xlsx | Save location
 
+!Variable definition
 object oTable;
 set sReports;
 int iCount;
@@ -18,7 +19,10 @@ set setDCContSubRes;
 object prj,zone,obj;
 string prjName;
 
-! output elements in the zone
+int tstart, tstop, telapsed;
+tstart = GetSystemTimeUTC();
+
+! Get current project and name, write out into the 
 prj = GetActiveProject();
 Info('Izvoz rezultatov za projekt %s', prjName);
 
@@ -52,3 +56,8 @@ for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
   }
   CloseTableReports();
 }
+
+! Calculate and print elapsed time to console
+tstop = GetSystemTimeUTC();
+telapsed = tstop-tstart;
+Info('Skripta izvedena v casu %d sekund', telapsed);
