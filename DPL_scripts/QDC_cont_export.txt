@@ -1,4 +1,4 @@
-#Script that exports PF contingency analysis results 
+#Script that exports PF contingency analysis results for each separate hour. Run contingency analysis with multiple defines dates/times beforehand. Works for DC contingency, for AC contingency change the results location (Contingency Analysis DC.ElmRes -> Contingency Analysis AC.ElmRes)
 #Variable string | save_loc | C:\\....\file.xlsx | Save location
 
 object oTable;
