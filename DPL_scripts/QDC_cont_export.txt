@@ -42,7 +42,7 @@ for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
   oContingencyReport.Execute();
   !Create save path based on save location, project name and result file name (datetime)
   strPath=sprintf('%s%s%s%s%s',save_loc,prj:loc_name,' ',elmRes:loc_name,'.xlsx');
-  !Get report
+  !Get report and save it
   sReports=GetTableReports();
   iCount=sReports.Count();
   !Ce je report ga izvozi v excel
