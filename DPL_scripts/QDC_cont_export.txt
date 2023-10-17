@@ -22,29 +22,26 @@ string prjName;
 int tstart, tstop, telapsed;
 tstart = GetSystemTimeUTC();
 
-! Get current project and name, write out into the 
+! Get current project and name, write out into the console
 prj = GetActiveProject();
 Info('Izvoz rezultatov za projekt %s', prjName);
+! Get contingency report object 
+oContingencyReport = GetFromStudyCase('ComCntreport');
 
 ! Get DC contingency results and subresults for each hour
 oDCContRes = GetFromStudyCase('Contingency Analysis DC.ElmRes');
 setDCContSubRes = oDCContRes.GetContents('*.ElmRes');
-! 
-Info('%s', oDCContRes);
-! Get contingency report object 
-oContingencyReport = GetFromStudyCase('ComCntreport');
 ! Loop through result files 
 for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
-  Info('Datoteka z rezultati %s',elmRes);
-  !Select result file
+  Info('Izbrana datoteka z rezultati %s',elmRes);
+  !Select current result file in contingency report dialog window. Enable limits and set loading limit to 0 - printing all results
   oContingencyReport:p_rescnt = elmRes;
   oContingencyReport:iopt_ml = 1;
   oContingencyReport:iopt_maxl = 0;
   !Generate contingency report
   oContingencyReport.Execute();
-  !Save path
+  !Create save path based on save location, project name and result file name (datetime)
   strPath=sprintf('%s%s%s%s%s',save_loc,prj:loc_name,' ',elmRes:loc_name,'.xlsx');
-  Info('%s',strPath);
   !Get report
   sReports=GetTableReports();
   iCount=sReports.Count();
@@ -52,7 +49,11 @@ for(elmRes=setDCContSubRes.First();elmRes;elmRes=setDCContSubRes.Next()){
   if(iCount>=1){
     for(oTable=sReports.First();oTable;oTable=sReports.Next()){
       oTable.ExportToExcel(strPath,0); ! 1 opens the file directly
+      Info('Rezultati shranjeni v %s',strPath);
     }
+  }
+  else{
+    Info('Napaka pri shranjevanju rezultatov');
   }
   CloseTableReports();
 }
